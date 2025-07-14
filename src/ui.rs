@@ -1,113 +1,238 @@
 use crate::app::{App, Mode};
+use crate::syntax::{highlight_syntax_with_state, highlight_syntax_with_unmatched, BracketState};
+use crate::constants::{editor, ui as ui_constants, file};
 use ratatui::{
-    backend::Backend,
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
+    layout::{Alignment, Constraint, Direction, Layout, Margin},
+    style::{Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 pub fn ui(f: &mut Frame, app: &mut App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)].as_ref())
-        .split(f.size());
+    let app_mode = app.mode;
+    let app_status_message = app.status_message.clone();
+    let app_command_buffer = app.command_buffer.clone();
 
-    let text: Vec<Line> = app
-        .buffer
-        .iter()
-        .enumerate()
-        .map(|(i, line_str)| {
-            if let (Mode::Visual, Some(start)) = (&app.mode, app.visual_start) {
-                let (start_x, start_y) = start;
-                let (end_x, end_y) = (app.cursor_x, app.cursor_y);
+    let main_chunks = if app.show_directory {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(app.config.ui.directory_pane_width), Constraint::Min(0)].as_ref())
+            .split(f.size())
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(0)].as_ref())
+            .split(f.size())
+    };
 
-                // Normalize selection direction
-                let ((sel_start_y, sel_start_x), (sel_end_y, sel_end_x)) =
-                    if (start_y, start_x) <= (end_y, end_x) {
-                        ((start_y, start_x), (end_y, end_x))
-                    } else {
-                        ((end_y, end_x), (start_y, start_x))
-                    };
-
-                if i >= sel_start_y && i <= sel_end_y {
-                    let chars: Vec<char> = line_str.chars().collect();
-                    let line_len = chars.len();
-
-                    let highlight_start = if i == sel_start_y { sel_start_x } else { 0 };
-                    let highlight_end = if i == sel_end_y {
-                        sel_end_x + 1
-                    } else {
-                        line_len
-                    };
-
-                    let highlight_start = highlight_start.min(line_len);
-                    let highlight_end = highlight_end.min(line_len);
-
-                    if highlight_start >= highlight_end {
-                        return Line::from(line_str.as_str());
-                    }
-
-                    let mut spans = Vec::new();
-                    if highlight_start > 0 {
-                        spans.push(Span::from(
-                            chars[0..highlight_start].iter().collect::<String>(),
-                        ));
-                    }
-                    spans.push(Span::styled(
-                        chars[highlight_start..highlight_end]
-                            .iter()
-                            .collect::<String>(),
-                        Style::default().bg(Color::Blue),
-                    ));
-                    if highlight_end < line_len {
-                        spans.push(Span::from(
-                            chars[highlight_end..line_len].iter().collect::<String>(),
-                        ));
-                    }
-
-                    return Line::from(spans);
-                }
+    if app.show_directory {
+        let directory_title = format!("Directory: {}", app.current_path.to_string_lossy());
+        let directory_block = Block::default().borders(Borders::ALL).title(directory_title);
+        let directory_list: Vec<Line> = app.directory_files.iter().enumerate().map(|(i, file)| {
+            if i == app.selected_directory_index {
+                Line::from(Span::styled(file, Style::default().bg(app.config.theme.ui.selection_background.clone().into())))
+            } else {
+                Line::from(file.as_str())
             }
-            Line::from(line_str.as_str())
-        })
-        .collect();
-    let editor_paragraph =
-        Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Editor"));
-    f.render_widget(editor_paragraph, chunks[0]);
+        }).collect();
+        let directory_paragraph = Paragraph::new(directory_list).block(directory_block);
+        f.render_widget(directory_paragraph, main_chunks[0]);
+    }
 
-    let status_bar_text = match app.mode {
-        Mode::Normal => format!(
-            "NORMAL | {}:{} | {}",
-            app.cursor_y + 1,
-            app.cursor_x + 1,
-            app.status_message
-        ),
+    let editor_chunk_index = if app.show_directory { 1 } else { 0 };
+    let editor_area = main_chunks[editor_chunk_index];
+
+    // ペインマネージャーを使用してレイアウトを計算
+    app.pane_manager.calculate_layout(editor_area);
+
+    // すべてのリーフペインの情報を取得
+    let pane_info: Vec<(usize, usize, ratatui::layout::Rect, bool)> = {
+        let leaf_panes = app.pane_manager.get_leaf_panes();
+        let active_pane_id = app.pane_manager.get_active_pane_id();
+        
+        leaf_panes.iter()
+            .filter_map(|pane| {
+                pane.rect.map(|rect| {
+                    (pane.id, pane.window_index, rect, pane.id == active_pane_id)
+                })
+            })
+            .collect()
+    };
+    
+    // ペインを描画
+    for (_, window_index, rect, is_active) in pane_info {
+        draw_editor_pane(f, app, rect, window_index, is_active);
+    }
+
+    // ステータスバーの描画
+    let status_bar_text = match app_mode {
+        Mode::Normal => {
+            let w = app.current_window();
+            format!(
+                "NORMAL | {}:{} | {}",
+                w.cursor_y + 1,
+                w.cursor_x + 1,
+                app_status_message
+            )
+        },
         Mode::Insert => "INSERT".to_string(),
         Mode::Visual => "VISUAL".to_string(),
-        Mode::Command => format!(":{}", app.command_buffer),
+        Mode::Command => format!(":{}", app_command_buffer),
     };
-    let status_bar = Paragraph::new(status_bar_text).style(Style::default().bg(Color::Gray));
-    f.render_widget(status_bar, chunks[1]);
+    let status_bar_chunk = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(app.config.ui.status_bar_height)].as_ref())
+        .split(f.size())[1];
+    let status_bar = Paragraph::new(status_bar_text).style(Style::default().bg(app.config.theme.ui.status_bar_background.clone().into()));
+    f.render_widget(status_bar, status_bar_chunk);
 
-    // Show cursor
-    match app.mode {
-        Mode::Normal | Mode::Insert | Mode::Visual => {
-            f.set_cursor(
-                chunks[0].x + app.cursor_x as u16 + 1,
-                chunks[0].y + app.cursor_y as u16 + 1,
-            )
-        }
-        Mode::Command => {
-            f.set_cursor(
-                chunks[1].x + app.command_buffer.len() as u16 + 1,
-                chunks[1].y,
-            )
+    // カーソルの描画
+    if !app.show_directory {
+        if let Some(active_pane) = app.pane_manager.get_active_pane() {
+            if let Some(rect) = active_pane.rect {
+                let show_line_numbers = app.config.editor.show_line_numbers;
+                let horizontal_margin = app.config.ui.editor_margins.horizontal;
+                let current_window = app.current_window();
+                let cursor_width = current_window.buffer[current_window.cursor_y]
+                    .graphemes(true)
+                    .take(current_window.cursor_x)
+                    .map(|g| g.width())
+                    .sum::<usize>();
+                let line_number_width = if show_line_numbers { editor::DEFAULT_LINE_NUMBER_WIDTH } else { 0 };
+                let separator_width = if show_line_numbers { editor::LINE_NUMBER_SEPARATOR_WIDTH } else { 0 };
+                let text_start_x_offset = horizontal_margin as usize + line_number_width + separator_width;
+                f.set_cursor(
+                    rect.x + text_start_x_offset as u16 + (cursor_width - current_window.scroll_x) as u16,
+                    rect.y + 1 + (current_window.cursor_y - current_window.scroll_y) as u16,
+                )
+            }
         }
     }
-    // Clear status message after displaying it once
-    if !app.status_message.is_empty() && !matches!(app.mode, Mode::Command) {
-        app.status_message.clear();
+}
+
+fn draw_editor_pane(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect, window_index: usize, is_active: bool) {
+    let window = &mut app.windows[window_index];
+    let app_mode = app.mode;
+    let config = &app.config;
+
+    let border_style = if is_active { Style::default().fg(config.theme.ui.active_pane_border.clone().into()) } else { Style::default() };
+    let editor_block = Block::default().borders(Borders::ALL).title(window.filename.as_deref().unwrap_or(file::DEFAULT_FILENAME)).border_style(border_style);
+    f.render_widget(editor_block, area);
+    let editor_area = area.inner(&Margin { 
+        vertical: config.ui.editor_margins.vertical, 
+        horizontal: config.ui.editor_margins.horizontal 
+    });
+
+    window.scroll_to_cursor(editor_area.height as usize, editor_area.width as usize, config.editor.show_line_numbers);
+
+    let line_number_width = if config.editor.show_line_numbers { config.editor.line_number_width } else { 0 };
+    let separator_width = if config.editor.show_line_numbers { editor::LINE_NUMBER_SEPARATOR_WIDTH } else { 0 };
+
+    let editor_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(line_number_width as u16),
+            Constraint::Length(separator_width as u16),
+            Constraint::Min(0),
+        ])
+        .split(editor_area);
+
+    if config.editor.show_line_numbers {
+        let line_numbers: Vec<Line> = (window.scroll_y..window.scroll_y + editor_area.height as usize)
+            .map(|i| {
+                if i < window.buffer.len() {
+                    Line::from(Span::styled(
+                        format!("{:>width$}", i + 1, width = line_number_width), 
+                        Style::default().fg(config.theme.ui.line_number.clone().into())
+                    ))
+                } else {
+                    Line::from(Span::styled(
+                        format!("{:>width$}", ui_constants::EMPTY_LINE_MARKER, width = line_number_width), 
+                        Style::default().fg(config.theme.ui.line_number.clone().into())
+                    ))
+                }
+            })
+            .collect();
+        let line_numbers_paragraph = Paragraph::new(line_numbers).alignment(Alignment::Right);
+        f.render_widget(line_numbers_paragraph, editor_chunks[0]);
+
+        let space_paragraph = Paragraph::new(" ");
+        f.render_widget(space_paragraph, editor_chunks[1]);
     }
+
+    // かっこの状態をリセットして、ファイル全体を通して追跡
+    let mut bracket_state = BracketState::new();
+    
+    // 表示される行より前の行も処理してかっこの状態を更新
+    for line_str in window.buffer.iter().take(window.scroll_y) {
+        highlight_syntax_with_state(line_str, config.editor.indent_width, &mut bracket_state, &config.theme);
+    }
+
+    let text: Vec<Line> = window
+        .buffer
+        .iter()
+        .skip(window.scroll_y)
+        .take(editor_area.height as usize)
+        .enumerate()
+        .map(|(i, line_str)| (i + window.scroll_y, line_str))
+        .map(|(i, line_str)| {
+            if let (Mode::Visual, Some(start)) = (&app_mode, window.visual_start) {
+                if is_active {
+                    let (start_x, start_y) = start;
+                    let (end_x, end_y) = (window.cursor_x, window.cursor_y);
+
+                    let ((sel_start_y, sel_start_x), (sel_end_y, sel_end_x)) =
+                        if (start_y, start_x) <= (end_y, end_x) {
+                            ((start_y, start_x), (end_y, end_x))
+                        } else {
+                            ((end_y, end_x), (start_y, start_x))
+                        };
+
+                    if i >= sel_start_y && i <= sel_end_y {
+                        let graphemes: Vec<&str> = line_str.graphemes(true).collect();
+                        let line_len = graphemes.len();
+
+                        let highlight_start = if i == sel_start_y { sel_start_x } else { 0 };
+                        let highlight_end = if i == sel_end_y { sel_end_x + 1 } else { line_len };
+
+                        let highlight_start = highlight_start.min(line_len);
+                        let highlight_end = highlight_end.min(line_len);
+
+                        let mut spans = Vec::new();
+                        if highlight_start > 0 {
+                            let s = graphemes[0..highlight_start].join("");
+                            let mut temp_bracket_state = bracket_state.clone();
+                            spans.extend(highlight_syntax_with_unmatched(&s, config.editor.indent_width, &mut temp_bracket_state, &window.unmatched_brackets, &config.theme));
+                        }
+                        if highlight_start < highlight_end {
+                            let selected_text = graphemes[highlight_start..highlight_end].join("");
+                            let mut temp_bracket_state = bracket_state.clone();
+                            let highlighted_selected_spans = highlight_syntax_with_unmatched(&selected_text, config.editor.indent_width, &mut temp_bracket_state, &window.unmatched_brackets, &config.theme)
+                                .into_iter()
+                                .map(|mut span| {
+                                    span.style = span.style.bg(config.theme.ui.visual_selection_background.clone().into());
+                                    span
+                                })
+                                .collect::<Vec<Span<'static>>>();
+                            spans.extend(highlighted_selected_spans);
+                        }
+                        if highlight_end < line_len {
+                            let s = graphemes[highlight_end..line_len].join("");
+                            let mut temp_bracket_state = bracket_state.clone();
+                            spans.extend(highlight_syntax_with_unmatched(&s, config.editor.indent_width, &mut temp_bracket_state, &window.unmatched_brackets, &config.theme));
+                        }
+                        // この行のかっこ状態を更新
+                        highlight_syntax_with_unmatched(line_str, config.editor.indent_width, &mut bracket_state, &window.unmatched_brackets, &config.theme);
+                        return Line::from(spans);
+                    }
+                }
+            }
+            Line::from(highlight_syntax_with_unmatched(line_str, config.editor.indent_width, &mut bracket_state, &window.unmatched_brackets, &config.theme))
+        })
+        .collect();
+    let editor_paragraph = Paragraph::new(text).scroll((0, window.scroll_x as u16));
+    f.render_widget(editor_paragraph, editor_chunks[2]);
 }

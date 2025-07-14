@@ -1,0 +1,37 @@
+{
+  "syntax": {
+    "keyword": [254, 128, 25],
+    "string": [184, 187, 38],
+    "number": [211, 134, 155],
+    "comment": [146, 131, 116],
+    "function": [250, 189, 47],
+    "macro": [254, 128, 25],
+    "type": [250, 189, 47],
+    "identifier": [235, 219, 178],
+    "operator": [254, 128, 25],
+    "symbol": [235, 219, 178],
+    "bracket_colors": [
+      [235, 219, 178],
+      [251, 73, 52],
+      [184, 187, 38],
+      [131, 165, 152],
+      [250, 189, 47],
+      [211, 134, 155],
+      [142, 192, 124]
+    ],
+    "unmatched_bracket_fg": "Red",
+    "unmatched_bracket_bg": [60, 56, 54]
+  },
+  "ui": {
+    "active_pane_border": [250, 189, 47],
+    "selection_background": [80, 73, 69],
+    "status_bar_background": [60, 56, 54],
+    "line_number": [146, 131, 116],
+    "visual_selection_background": [80, 73, 69],
+    "indent_colors": [
+      [80, 73, 69],
+      [90, 83, 79],
+      [100, 93, 89]
+    ]
+  }
+}
