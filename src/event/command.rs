@@ -14,9 +14,9 @@ pub fn handle_command_mode_event(app: &mut App, key_code: KeyCode) -> io::Result
             let command = app.command_buffer.trim().to_string();
             match command.as_str() {
                 "w" => {
-                    let current_window = app.current_window();
+                    let current_window = app.current_window_mut();
                     current_window.save_file()?;
-                    app.status_message = format!("\"{}\" written", current_window.filename.as_deref().unwrap_or("Untitled"));
+                    app.status_message = format!("\"{}\" written", current_window.filename().as_deref().unwrap_or("Untitled"));
                 }
                 "q" => {
                     let active_pane_id = app.pane_manager.get_active_pane_id();
@@ -26,16 +26,16 @@ pub fn handle_command_mode_event(app: &mut App, key_code: KeyCode) -> io::Result
                     }
                 }
                 "wq" => {
-                    let current_window = app.current_window();
+                    let current_window = app.current_window_mut();
                     current_window.save_file()?;
-                    app.status_message = format!("\"{}\" written", current_window.filename.as_deref().unwrap_or("Untitled"));
+                    app.status_message = format!("\"{}\" written", current_window.filename().as_deref().unwrap_or("Untitled"));
                     return Ok(Some(()));
                 }
                 "r" | "reload" => {
-                    let current_window = app.current_window();
+                    let current_window = app.current_window_mut();
                     match current_window.reload_file() {
                         Ok(()) => {
-                            app.status_message = format!("\"{}\" reloaded", current_window.filename.as_deref().unwrap_or("Untitled"));
+                            app.status_message = format!("\"{}\" reloaded", current_window.filename().as_deref().unwrap_or("Untitled"));
                         }
                         Err(e) => {
                             app.status_message = format!("Failed to reload file: {}", e);
@@ -44,10 +44,10 @@ pub fn handle_command_mode_event(app: &mut App, key_code: KeyCode) -> io::Result
                 }
                 "e" | "edit" => {
                     // 引数なしの場合は現在のファイルを再読み込み
-                    let current_window = app.current_window();
+                    let current_window = app.current_window_mut();
                     match current_window.reload_file() {
                         Ok(()) => {
-                            app.status_message = format!("\"{}\" reloaded", current_window.filename.as_deref().unwrap_or("Untitled"));
+                            app.status_message = format!("\"{}\" reloaded", current_window.filename().as_deref().unwrap_or("Untitled"));
                         }
                         Err(e) => {
                             app.status_message = format!("Failed to reload file: {}", e);

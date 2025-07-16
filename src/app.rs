@@ -19,26 +19,75 @@ pub enum Mode {
 
 // App holds the state of the application
 #[derive(Clone)]
-pub struct WindowState {
-    pub buffer: Vec<String>,
-    pub cursor_x: usize,
-    pub cursor_y: usize,
+struct WindowState {
+    buffer: Vec<String>,
+    cursor_x: usize,
+    cursor_y: usize,
 }
 
 pub struct Window {
-    pub buffer: Vec<String>,
-    pub cursor_x: usize,
-    pub cursor_y: usize,
-    pub scroll_y: usize,
-    pub scroll_x: usize,
-    pub filename: Option<String>,
-    pub visual_start: Option<(usize, usize)>,
-    pub yanked_text: String,
-    pub undo_stack: Vec<WindowState>,
-    pub redo_stack: Vec<WindowState>,
-    pub insert_mode_start_state: Option<WindowState>, // 挿入モード開始時の状態
-    pub needs_syntax_update: bool, // シンタックスハイライトの更新が必要かどうか
-    pub last_modified_line: Option<usize>, // 最後に変更された行番号
+    buffer: Vec<String>,
+    cursor_x: usize,
+    cursor_y: usize,
+    scroll_y: usize,
+    scroll_x: usize,
+    filename: Option<String>,
+    visual_start: Option<(usize, usize)>,
+    yanked_text: String,
+    undo_stack: Vec<WindowState>,
+    redo_stack: Vec<WindowState>,
+    insert_mode_start_state: Option<WindowState>,
+    needs_syntax_update: bool,
+    last_modified_line: Option<usize>,
+    matching_bracket: Option<(usize, usize)>,
+}
+
+impl Window {
+    pub fn buffer(&self) -> &Vec<String> {
+        &self.buffer
+    }
+    pub fn buffer_mut(&mut self) -> &mut Vec<String> {
+        &mut self.buffer
+    }
+    pub fn cursor_x(&self) -> usize {
+        self.cursor_x
+    }
+    pub fn cursor_x_mut(&mut self) -> &mut usize {
+        &mut self.cursor_x
+    }
+    pub fn cursor_y(&self) -> usize {
+        self.cursor_y
+    }
+    pub fn cursor_y_mut(&mut self) -> &mut usize {
+        &mut self.cursor_y
+    }
+    pub fn scroll_y(&self) -> usize {
+        self.scroll_y
+    }
+    pub fn scroll_y_mut(&mut self) -> &mut usize {
+        &mut self.scroll_y
+    }
+    pub fn scroll_x(&self) -> usize {
+        self.scroll_x
+    }
+    pub fn scroll_x_mut(&mut self) -> &mut usize {
+        &mut self.scroll_x
+    }
+    pub fn filename(&self) -> Option<&str> {
+        self.filename.as_deref()
+    }
+    pub fn visual_start(&self) -> Option<(usize, usize)> {
+        self.visual_start
+    }
+    pub fn visual_start_mut(&mut self) -> &mut Option<(usize, usize)> {
+        &mut self.visual_start
+    }
+    pub fn matching_bracket(&self) -> Option<(usize, usize)> {
+        self.matching_bracket
+    }
+    pub fn matching_bracket_mut(&mut self) -> &mut Option<(usize, usize)> {
+        &mut self.matching_bracket
+    }
 }
 
 impl Window {
@@ -65,6 +114,7 @@ impl Window {
             insert_mode_start_state: None,
             needs_syntax_update: true,
             last_modified_line: None,
+            matching_bracket: None,
         }
     }
 
@@ -152,6 +202,63 @@ impl Window {
     pub fn mark_syntax_updated(&mut self) {
         self.needs_syntax_update = false;
         self.last_modified_line = None;
+    }
+
+    pub fn find_matching_bracket(&mut self) {
+        self.matching_bracket = None;
+        if self.cursor_y >= self.buffer.len() || self.cursor_x >= self.buffer[self.cursor_y].len() {
+            return;
+        }
+
+        let ch = self.buffer[self.cursor_y].chars().nth(self.cursor_x).unwrap();
+        let (open_bracket, close_bracket) = match ch {
+            '(' => ('(', ')'),
+            ')' => ('(', ')'),
+            '[' => ('[', ']'),
+            ']' => ('[', ']'),
+            '{' => ('{', '}'),
+            '}' => ('{', '}'),
+            _ => return,
+        };
+
+        let is_forward = ch == open_bracket;
+        let mut stack = Vec::new();
+        let current_y = self.cursor_y;
+
+        if is_forward {
+            for y in current_y..self.buffer.len() {
+                let line = &self.buffer[y];
+                let start_x = if y == current_y { self.cursor_x } else { 0 };
+                for (x, c) in line.chars().enumerate().skip(start_x) {
+                    if c == open_bracket {
+                        stack.push(c);
+                    } else if c == close_bracket {
+                        stack.pop();
+                        if stack.is_empty() {
+                            self.matching_bracket = Some((x, y));
+                            return;
+                        }
+                    }
+                }
+            }
+        } else {
+            for y in (0..=current_y).rev() {
+                let line = &self.buffer[y];
+                let end_x = if y == current_y { self.cursor_x + 1 } else { line.len() };
+                let line_chars: Vec<(usize, char)> = line.chars().enumerate().take(end_x).collect();
+                for (x, c) in line_chars.into_iter().rev() {
+                    if c == close_bracket {
+                        stack.push(c);
+                    } else if c == open_bracket {
+                        stack.pop();
+                        if stack.is_empty() {
+                            self.matching_bracket = Some((x, y));
+                            return;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn save_state(&mut self) {
@@ -261,14 +368,14 @@ impl Window {
     }
 
     pub fn scroll_to_cursor(&mut self, height: usize, width: usize, show_line_numbers: bool) {
-        // Vertical scroll
+        // Vertical scroll - 基本的なスクロール処理
         if self.cursor_y < self.scroll_y {
             self.scroll_y = self.cursor_y;
         } else if self.cursor_y >= self.scroll_y + height {
             self.scroll_y = self.cursor_y - height + 1;
         }
 
-        // Horizontal scroll
+        // Horizontal scroll - 基本的なスクロール処理
         let line_number_width = if show_line_numbers { 4 } else { 0 };
         let separator_width = if show_line_numbers { 1 } else { 0 };
         let available_width = width.saturating_sub(line_number_width + separator_width);
@@ -299,8 +406,12 @@ pub struct App {
     pub current_path: PathBuf,
     pub directory_files: Vec<String>,
     pub selected_directory_index: usize,
+    pub directory_scroll_offset: usize,
     pub show_directory: bool,
     pub config: Config,
+    pub show_completion: bool,
+    pub completions: Vec<String>,
+    pub selected_completion: usize,
 }
 
 impl App {
@@ -325,8 +436,12 @@ impl App {
             current_path: path,
             directory_files: vec![],
             selected_directory_index: 0,
+            directory_scroll_offset: 0,
             show_directory: true,
             config,
+            show_completion: false,
+            completions: Vec::new(),
+            selected_completion: 0,
         };
         app.update_directory_files();
         app
@@ -595,6 +710,7 @@ impl App {
             self.directory_files.extend(files);
         }
         self.selected_directory_index = 0;
+        self.directory_scroll_offset = 0;
     }
 
     pub fn open_selected_item(&mut self) {
@@ -684,13 +800,18 @@ impl App {
         }
     }
 
-    pub fn current_window(&mut self) -> &mut Window {
+    pub fn current_window_mut(&mut self) -> &mut Window {
         let index = self.get_active_window_index();
         &mut self.windows[index]
     }
 
+    pub fn current_window(&self) -> &Window {
+        let index = self.get_active_window_index();
+        &self.windows[index]
+    }
+
     pub fn set_yanked_text(&mut self, text: String) {
-        self.current_window().yanked_text = text.clone();
+        self.current_window_mut().yanked_text = text.clone();
         if let Err(e) = self.clipboard.set_text(text) {
             self.status_message = format!("Failed to set clipboard: {}", e);
         }
@@ -763,6 +884,105 @@ impl App {
                 }
                 self.status_message = format!("\"{}\" [New File]", filename);
             }
+        }
+    }
+
+    pub fn update_completions(&mut self) {
+        let (start, end) = self.get_current_word_bounds();
+        let window = self.current_window();
+        let current_line = &window.buffer[window.cursor_y];
+        let current_word = &current_line[start..end];
+
+        if current_word.is_empty() {
+            self.show_completion = false;
+            return;
+        }
+
+        let mut completions = std::collections::HashSet::new();
+        for line in &window.buffer {
+            for word in line.split(|c: char| !c.is_alphanumeric() && c != '_') {
+                if word.starts_with(current_word) && word != current_word {
+                    completions.insert(word.to_string());
+                }
+            }
+        }
+
+        self.completions = completions.into_iter().collect();
+        self.completions.sort();
+
+        if self.completions.is_empty() {
+            self.show_completion = false;
+        } else {
+            self.show_completion = true;
+            self.selected_completion = 0;
+        }
+    }
+
+    pub fn apply_completion(&mut self) {
+        if self.show_completion && !self.completions.is_empty() {
+            let completion = &self.completions[self.selected_completion].clone();
+            let (start, end) = self.get_current_word_bounds();
+            let window = self.current_window_mut();
+            let line = &mut window.buffer[window.cursor_y];
+            line.replace_range(start..end, completion);
+            window.cursor_x = start + completion.len();
+            self.show_completion = false;
+        }
+    }
+
+    fn get_current_word_bounds(&self) -> (usize, usize) {
+        let window = self.current_window();
+        let line = &window.buffer[window.cursor_y];
+        let cursor_x = window.cursor_x;
+
+        let start = line[..cursor_x]
+            .rfind(|c: char| !c.is_alphanumeric() && c != '_')
+            .map_or(0, |i| i + 1);
+
+        let end = line[cursor_x..]
+            .find(|c: char| !c.is_alphanumeric() && c != '_')
+            .map_or(line.len(), |i| cursor_x + i);
+
+        (start, end)
+    }
+
+    pub fn move_directory_selection_up(&mut self, visible_height: usize) {
+        if self.selected_directory_index > 0 {
+            self.selected_directory_index -= 1;
+            self.update_directory_scroll(visible_height);
+        }
+    }
+
+    pub fn move_directory_selection_down(&mut self, visible_height: usize) {
+        if self.directory_files.is_empty() {
+            return;
+        }
+        let last_index = self.directory_files.len().saturating_sub(1);
+        let relative = self.selected_directory_index - self.directory_scroll_offset;
+        if self.selected_directory_index < last_index {
+            if relative < visible_height - 1 {
+                // まだウィンドウの一番下でなければインデックスのみ進める
+                self.selected_directory_index += 1;
+            } else if self.directory_scroll_offset + visible_height <= last_index {
+                // 一番下に到達したときだけスクロール。インデックスはそのまま
+                self.directory_scroll_offset += 1;
+            }
+        }
+    }
+
+    pub fn update_directory_scroll(&mut self, visible_height: usize) {
+        // リスト全体がウィンドウ内に収まる場合はスクロール不要
+        if self.directory_files.len() <= visible_height {
+            self.directory_scroll_offset = 0;
+            return;
+        }
+        // 選択項目が表示範囲の上にある場合
+        if self.selected_directory_index < self.directory_scroll_offset {
+            self.directory_scroll_offset = self.selected_directory_index;
+        }
+        // 選択項目が表示範囲の下にある場合
+        else if self.selected_directory_index >= self.directory_scroll_offset + visible_height {
+            self.directory_scroll_offset = self.selected_directory_index.saturating_sub(visible_height - 1);
         }
     }
 

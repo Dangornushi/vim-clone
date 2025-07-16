@@ -66,6 +66,9 @@ pub struct UiTheme {
     pub line_number: SerializableColor,
     pub visual_selection_background: SerializableColor,
     pub indent_colors: Vec<SerializableColor>,
+    pub completion_background: SerializableColor,
+    pub completion_foreground: SerializableColor,
+    pub completion_selection_background: SerializableColor,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -237,6 +240,9 @@ impl Default for UiTheme {
                 SerializableColor::Rgb([55, 55, 55]),
                 SerializableColor::Rgb([65, 55, 50]),
             ],
+            completion_background: SerializableColor::Name("DarkGray".to_string()),
+            completion_foreground: SerializableColor::Name("White".to_string()),
+            completion_selection_background: SerializableColor::Name("Blue".to_string()),
         }
     }
 }

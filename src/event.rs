@@ -46,6 +46,7 @@ pub fn run_app<B: Backend + std::io::Write>(terminal: &mut Terminal<B>, mut app:
                         }
                     }
                 }
+                app.current_window_mut().find_matching_bracket();
             }
         }
     }

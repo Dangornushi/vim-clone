@@ -28,6 +28,9 @@
     "status_bar_background": [60, 56, 54],
     "line_number": [146, 131, 116],
     "visual_selection_background": [80, 73, 69],
+    "completion_background": [70, 70, 70],
+    "completion_foreground": [235, 219, 178],
+    "completion_selection_background": [100, 100, 100],
     "indent_colors": [
       [80, 73, 69],
       [90, 83, 79],
