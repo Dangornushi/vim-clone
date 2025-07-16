@@ -196,17 +196,22 @@ fn draw_editor_pane(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect, w
         f.render_widget(space_paragraph, editor_chunks[1]);
     }
 
-    // 1. ファイル全体をスキャンし、各行の開始時点での BracketState をキャッシュする
+    // 1. ファイル全体をスキャンし、閉じられていない開き括弧を特定し、
+    //    同時に各行の開始時点での BracketState をキャッシュする
     let mut states_by_line = Vec::with_capacity(window.buffer.len() + 1);
     states_by_line.push(BracketState::new());
     let mut current_state = BracketState::new();
-    for line_str in window.buffer.iter() {
-        // 状態更新のみ行い、スパン生成はしない
+    let empty_unmatched = std::collections::HashSet::new();
+    for (i, line_str) in window.buffer.iter().enumerate() {
         let space_count = crate::syntax::count_leading_spaces(line_str);
         let content_part = &line_str[space_count..];
-        let _ = crate::syntax::tokenize_with_state(content_part, &mut current_state);
+        // このループでは状態の更新とキャッシュが目的なので、unmatched_brackets は空のセットを渡す
+        let _ = crate::syntax::tokenize_with_state(content_part, i, space_count, &mut current_state, &empty_unmatched);
         states_by_line.push(current_state.clone());
     }
+    // スキャン完了後、スタックに残っているものが閉じられていない開き括弧
+    let unmatched_brackets: std::collections::HashSet<(usize, usize)> = 
+        current_state.stack.iter().map(|&(_, line, col)| (line, col)).collect();
 
     // 2. 表示範囲の行をレンダリングする
     let text: Vec<Line> = window
@@ -244,11 +249,11 @@ fn draw_editor_pane(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect, w
                         let mut spans = Vec::new();
                         if highlight_start > 0 {
                             let s = graphemes[0..highlight_start].join("");
-                            spans.extend(highlight_syntax_with_state(&s, config.editor.indent_width, &mut bracket_state, &config.theme));
+                            spans.extend(highlight_syntax_with_state(&s, i, config.editor.indent_width, &mut bracket_state, &config.theme, &unmatched_brackets));
                         }
                         if highlight_start < highlight_end {
                             let selected_text = graphemes[highlight_start..highlight_end].join("");
-                            let highlighted_selected_spans = highlight_syntax_with_state(&selected_text, config.editor.indent_width, &mut bracket_state, &config.theme)
+                            let highlighted_selected_spans = highlight_syntax_with_state(&selected_text, i, config.editor.indent_width, &mut bracket_state, &config.theme, &unmatched_brackets)
                                 .into_iter()
                                 .map(|mut span| {
                                     span.style = span.style.bg(config.theme.ui.visual_selection_background.clone().into());
@@ -259,13 +264,13 @@ fn draw_editor_pane(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect, w
                         }
                         if highlight_end < line_len {
                             let s = graphemes[highlight_end..line_len].join("");
-                            spans.extend(highlight_syntax_with_state(&s, config.editor.indent_width, &mut bracket_state, &config.theme));
+                            spans.extend(highlight_syntax_with_state(&s, i, config.editor.indent_width, &mut bracket_state, &config.theme, &unmatched_brackets));
                         }
                         return Line::from(spans);
                     }
                 }
             }
-            Line::from(highlight_syntax_with_state(line_str, config.editor.indent_width, &mut bracket_state, &config.theme))
+            Line::from(highlight_syntax_with_state(line_str, i, config.editor.indent_width, &mut bracket_state, &config.theme, &unmatched_brackets))
         })
         .collect();
     let editor_paragraph = Paragraph::new(text).scroll((0, window.scroll_x as u16));

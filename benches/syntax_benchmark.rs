@@ -1,4 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::collections::HashSet;
 use vim_editor::config::Theme;
 use vim_editor::syntax::{count_leading_spaces, create_indent_spans, highlight_syntax_with_state, tokenize_with_state, BracketState};
 
@@ -19,9 +20,10 @@ fn benchmark_highlight_syntax(c: &mut Criterion) {
 
     c.bench_function("highlight_syntax_simple", |b| {
         let theme = Theme::default();
+        let unmatched_brackets = HashSet::new();
         b.iter(|| {
-            for line in &test_lines {
-                black_box(highlight_syntax_with_state(black_box(line), 4, &mut BracketState::new(), black_box(&theme)));
+            for (i, line) in test_lines.iter().enumerate() {
+                black_box(highlight_syntax_with_state(black_box(line), i, 4, &mut BracketState::new(), black_box(&theme), &unmatched_brackets));
             }
         })
     });
@@ -31,8 +33,9 @@ fn benchmark_highlight_syntax(c: &mut Criterion) {
     
     c.bench_function("highlight_syntax_long_line", |b| {
         let theme = Theme::default();
+        let unmatched_brackets = HashSet::new();
         b.iter(|| {
-            black_box(highlight_syntax_with_state(black_box(&long_line), 4, &mut BracketState::new(), black_box(&theme)));
+            black_box(highlight_syntax_with_state(black_box(&long_line), 0, 4, &mut BracketState::new(), black_box(&theme), &unmatched_brackets));
         })
     });
 
@@ -41,8 +44,9 @@ fn benchmark_highlight_syntax(c: &mut Criterion) {
     
     c.bench_function("highlight_syntax_deep_indent", |b| {
         let theme = Theme::default();
+        let unmatched_brackets = HashSet::new();
         b.iter(|| {
-            black_box(highlight_syntax_with_state(black_box(&deep_indent_line), 4, &mut BracketState::new(), black_box(&theme)));
+            black_box(highlight_syntax_with_state(black_box(&deep_indent_line), 0, 4, &mut BracketState::new(), black_box(&theme), &unmatched_brackets));
         })
     });
 }
@@ -51,16 +55,18 @@ fn benchmark_tokenize(c: &mut Criterion) {
     let complex_code = "fn process_data(data: &[i32]) -> Result<HashMap<String, i32>, Box<dyn std::error::Error>> {";
     
     c.bench_function("tokenize_complex", |b| {
+        let unmatched_brackets = HashSet::new();
         b.iter(|| {
-            black_box(tokenize_with_state(black_box(complex_code), &mut BracketState::new()));
+            black_box(tokenize_with_state(black_box(complex_code), 0, 0, &mut BracketState::new(), &unmatched_brackets));
         })
     });
 
     let simple_code = "let x = 42;";
     
     c.bench_function("tokenize_simple", |b| {
+        let unmatched_brackets = HashSet::new();
         b.iter(|| {
-            black_box(tokenize_with_state(black_box(simple_code), &mut BracketState::new()));
+            black_box(tokenize_with_state(black_box(simple_code), 0, 0, &mut BracketState::new(), &unmatched_brackets));
         })
     });
 
@@ -68,8 +74,9 @@ fn benchmark_tokenize(c: &mut Criterion) {
     let string_heavy = "println!(\"Hello, {}! Welcome to {} version {}\", name, app_name, version);";
     
     c.bench_function("tokenize_string_heavy", |b| {
+        let unmatched_brackets = HashSet::new();
         b.iter(|| {
-            black_box(tokenize_with_state(black_box(string_heavy), &mut BracketState::new()));
+            black_box(tokenize_with_state(black_box(string_heavy), 0, 0, &mut BracketState::new(), &unmatched_brackets));
         })
     });
 }
@@ -113,9 +120,10 @@ fn benchmark_large_file_simulation(c: &mut Criterion) {
 
     c.bench_function("highlight_large_file", |b| {
         let theme = Theme::default();
+        let unmatched_brackets = HashSet::new();
         b.iter(|| {
-            for line in &large_file_lines {
-                black_box(highlight_syntax_with_state(black_box(line), 4, &mut BracketState::new(), black_box(&theme)));
+            for (i, line) in large_file_lines.iter().enumerate() {
+                black_box(highlight_syntax_with_state(black_box(line), i, 4, &mut BracketState::new(), black_box(&theme), &unmatched_brackets));
             }
         })
     });
@@ -129,9 +137,10 @@ fn benchmark_memory_intensive(c: &mut Criterion) {
 
     c.bench_function("highlight_many_tokens", |b| {
         let theme = Theme::default();
+        let unmatched_brackets = HashSet::new();
         b.iter(|| {
-            for line in &lines_with_many_tokens {
-                black_box(highlight_syntax_with_state(black_box(line), 4, &mut BracketState::new(), black_box(&theme)));
+            for (i, line) in lines_with_many_tokens.iter().enumerate() {
+                black_box(highlight_syntax_with_state(black_box(line), i, 4, &mut BracketState::new(), black_box(&theme), &unmatched_brackets));
             }
         })
     });

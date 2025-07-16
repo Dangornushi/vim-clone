@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use vim_editor::config::Theme;
 use vim_editor::syntax::{highlight_syntax_with_state, count_leading_spaces, create_indent_spans, BracketState};
 
@@ -13,9 +14,10 @@ fn test_syntax_highlighting_integration() {
         "}",
     ];
     
+    let theme = Theme::default();
+    let unmatched_brackets = HashSet::new();
     for (i, line) in code_lines.iter().enumerate() {
-        let theme = Theme::default();
-        let spans = highlight_syntax_with_state(line, 4, &mut BracketState::new(), &theme);
+        let spans = highlight_syntax_with_state(line, i, 4, &mut BracketState::new(), &theme, &unmatched_brackets);
         assert!(!spans.is_empty(), "Line {} should have spans", i);
         
         // 各行の内容をチェック
@@ -84,7 +86,7 @@ fn test_indent_spans_creation() {
 fn test_string_handling() {
     let code = r#"let msg = "Hello, \"world\"!";"#;
     let theme = Theme::default();
-    let spans = highlight_syntax_with_state(code, 0, &mut BracketState::new(), &theme);
+    let spans = highlight_syntax_with_state(code, 0, 0, &mut BracketState::new(), &theme, &HashSet::new());
     
     // 文字列部分が正しく処理されているかチェック
     assert!(spans.iter().any(|s| s.content.contains("Hello")));
@@ -95,7 +97,7 @@ fn test_string_handling() {
 fn test_comment_handling() {
     let code = "let x = 5; // this is a comment";
     let theme = Theme::default();
-    let spans = highlight_syntax_with_state(code, 0, &mut BracketState::new(), &theme);
+    let spans = highlight_syntax_with_state(code, 0, 0, &mut BracketState::new(), &theme, &HashSet::new());
     
     // コメント部分が正しく処理されているかチェック
     assert!(spans.iter().any(|s| s.content.contains("this is a comment")));
@@ -103,20 +105,19 @@ fn test_comment_handling() {
 
 #[test]
 fn test_empty_and_whitespace_lines() {
-    // 空行
     let theme = Theme::default();
-    let spans = highlight_syntax_with_state("", 0, &mut BracketState::new(), &theme);
+    let unmatched_brackets = &HashSet::new();
+    // 空行
+    let spans = highlight_syntax_with_state("", 0, 0, &mut BracketState::new(), &theme, unmatched_brackets);
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].content, "");
     
     // 空白のみの行
-    let theme = Theme::default();
-    let spans = highlight_syntax_with_state("    ", 0, &mut BracketState::new(), &theme);
+    let spans = highlight_syntax_with_state("    ", 0, 0, &mut BracketState::new(), &theme, unmatched_brackets);
     assert_eq!(spans.len(), 1); // インデントスパンのみ
     
     // タブ混在（スペースのみをインデントとして扱う）
-    let theme = Theme::default();
-    let spans = highlight_syntax_with_state("\t    hello", 0, &mut BracketState::new(), &theme);
+    let spans = highlight_syntax_with_state("\t    hello", 0, 0, &mut BracketState::new(), &theme, unmatched_brackets);
     assert!(spans.len() >= 1);
 }
 
@@ -138,9 +139,10 @@ fn test_complex_rust_code() {
         "}",
     ];
     
+    let theme = Theme::default();
+    let unmatched_brackets = HashSet::new();
     for (line_num, line) in complex_code.iter().enumerate() {
-        let theme = Theme::default();
-        let spans = highlight_syntax_with_state(line, 4, &mut BracketState::new(), &theme);
+        let spans = highlight_syntax_with_state(line, line_num, 4, &mut BracketState::new(), &theme, &unmatched_brackets);
         
         // 各行が適切に処理されているかチェック
         if !line.trim().is_empty() {

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 /// かっこの入れ子状態を追跡する構造体
 #[derive(Debug, Clone)]
 pub struct BracketState {
-    pub stack: Vec<(char, usize)>, // (かっこの文字, 位置)
+    pub stack: Vec<(char, usize, usize)>, // (かっこの文字, 行番号, 列番号)
 }
 
 impl BracketState {
@@ -94,7 +94,13 @@ pub struct Token {
 }
 
 /// かっこの状態を保持しながらトークンに分割する関数
-pub fn tokenize_with_state(content: &str, bracket_state: &mut BracketState) -> Vec<Token> {
+pub fn tokenize_with_state(
+    content: &str, 
+    line_idx: usize,
+    content_start_col: usize,
+    bracket_state: &mut BracketState,
+    unmatched_brackets: &HashSet<(usize, usize)>
+) -> Vec<Token> {
     let mut tokens = Vec::new();
     let chars: Vec<char> = content.chars().collect();
     let mut i = 0;
@@ -117,10 +123,9 @@ pub fn tokenize_with_state(content: &str, bracket_state: &mut BracketState) -> V
             continue;
         }
         
-        // 文字列 (ダブルクォートまたはシングルクォート)
         // 文字列 (ダブルクォート)
-        if chars[i] == '"' {
-            in_string = !in_string;
+        if !in_string && chars[i] == '"' {
+            in_string = true;
             i += 1;
             tokens.push(Token {
                 content: "\"".to_string(),
@@ -130,16 +135,38 @@ pub fn tokenize_with_state(content: &str, bracket_state: &mut BracketState) -> V
             });
             continue;
         }
-        
+
         if in_string {
-            while i < chars.len() && chars[i] != '"' {
-                i += 1;
+            let content_start = i;
+            while i < chars.len() {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    i += 2; // エスケープシーケンス
+                } else if chars[i] == '"' {
+                    break; // 文字列の終わり
+                } else {
+                    i += 1;
+                }
             }
-            if start < i {
+
+            // 文字列の中身
+            if content_start < i {
                 tokens.push(Token {
-                    content: chars[start..i].iter().collect(),
+                    content: chars[content_start..i].iter().collect(),
                     token_type: TokenType::String,
-                    start,
+                    start: content_start,
+                    end: i,
+                });
+            }
+
+            // 閉じクォート
+            if i < chars.len() && chars[i] == '"' {
+                in_string = false;
+                let quote_start = i;
+                i += 1;
+                tokens.push(Token {
+                    content: "\"".to_string(),
+                    token_type: TokenType::String,
+                    start: quote_start,
                     end: i,
                 });
             }
@@ -148,8 +175,9 @@ pub fn tokenize_with_state(content: &str, bracket_state: &mut BracketState) -> V
 
         // 文字リテラルまたはライフタイム
         if chars[i] == '\'' {
-            // 次の文字が空白または記号でない場合、ライフタイムまたは文字リテラルとして扱う
-            if i + 1 < chars.len() && (chars[i+1].is_alphanumeric() || chars[i+1] == '_') {
+            // 次の文字が英数字か '_' で、かつその次が ' でない場合、ライフタイムとみなす
+            if i + 1 < chars.len() && (chars[i+1].is_alphanumeric() || chars[i+1] == '_')
+                && (i + 2 >= chars.len() || chars[i+2] != '\'') {
                 // ライフタイム
                 i += 1; // '\'' をスキップ
                 while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
@@ -164,15 +192,16 @@ pub fn tokenize_with_state(content: &str, bracket_state: &mut BracketState) -> V
                 continue;
             } else {
                 // 文字リテラル
-                i += 1; // '\'' をスキップ
-                if i < chars.len() && chars[i] == '\\' { // エスケープシーケンス
-                    i += 1;
-                }
-                if i < chars.len() { // 文字本体
-                    i += 1;
-                }
-                if i < chars.len() && chars[i] == '\'' { // 閉じ '\''
-                    i += 1;
+                i += 1; // 開始の '\'' をスキップ
+                while i < chars.len() {
+                    if chars[i] == '\\' && i + 1 < chars.len() {
+                        i += 2; // エスケープシーケンスをスキップ
+                    } else if chars[i] == '\'' {
+                        i += 1; // 終了の '\'' をスキップ
+                        break;
+                    } else {
+                        i += 1;
+                    }
                 }
                 tokens.push(Token {
                     content: chars[start..i].iter().collect(),
@@ -189,11 +218,16 @@ pub fn tokenize_with_state(content: &str, bracket_state: &mut BracketState) -> V
             match chars[i] {
                 '(' | '[' | '{' => {
                     let level = bracket_state.stack.len();
-                    bracket_state.stack.push((chars[i], start));
+                    let col = content_start_col + start;
+                    bracket_state.stack.push((chars[i], line_idx, col));
                     i += 1;
+                    
+                    // この開きかっこが、ファイル全体で見て閉じられていない開きかっこのセットに含まれていなければ、対応が取れているとみなす
+                    let is_matched = !unmatched_brackets.contains(&(line_idx, col));
+
                     tokens.push(Token {
                         content: chars[start..i].iter().collect(),
-                        token_type: TokenType::Bracket { level, is_matched: true },
+                        token_type: TokenType::Bracket { level, is_matched },
                         start,
                         end: i,
                     });
@@ -210,7 +244,7 @@ pub fn tokenize_with_state(content: &str, bracket_state: &mut BracketState) -> V
                     let mut is_matched = false;
                     let mut level = bracket_state.stack.len(); // デフォルトは現在のスタックレベル
                     
-                    if let Some(&(last_bracket, _)) = bracket_state.stack.last() {
+                    if let Some(&(last_bracket, _, _)) = bracket_state.stack.last() {
                         if last_bracket == expected_open {
                             bracket_state.stack.pop();
                             is_matched = true;
@@ -395,7 +429,14 @@ pub fn token_to_span(token: &Token, theme: &SyntaxTheme) -> Span<'static> {
 }
 
 /// かっこの状態を保持しながらシンタックスハイライトを行う関数
-pub fn highlight_syntax_with_state(line_str: &str, indent_width: usize, bracket_state: &mut BracketState, theme: &Theme) -> Vec<Span<'static>> {
+pub fn highlight_syntax_with_state(
+    line_str: &str, 
+    line_idx: usize,
+    indent_width: usize, 
+    bracket_state: &mut BracketState, 
+    theme: &Theme,
+    unmatched_brackets: &HashSet<(usize, usize)>
+) -> Vec<Span<'static>> {
     if line_str.is_empty() {
         return vec![Span::from("")];
     }
@@ -415,7 +456,7 @@ pub fn highlight_syntax_with_state(line_str: &str, indent_width: usize, bracket_
     }
 
     // トークン化してスパンに変換（かっこの状態を保持）
-    let tokens = tokenize_with_state(content_part, bracket_state);
+    let tokens = tokenize_with_state(content_part, line_idx, space_count, bracket_state, unmatched_brackets);
 
     for token in tokens {
         spans.push(token_to_span(&token, &theme.syntax));
@@ -456,7 +497,7 @@ mod tests {
     #[test]
     fn test_tokenize_simple() {
         let mut bracket_state = BracketState::new();
-        let tokens = tokenize_with_state("fn main()", &mut bracket_state);
+        let tokens = tokenize_with_state("fn main()", 0, 0, &mut bracket_state, &HashSet::new());
         assert_eq!(tokens.len(), 5); // fn, space, main, (, )
         assert_eq!(tokens[0].content, "fn");
         assert_eq!(tokens[0].token_type, TokenType::Keyword);
@@ -473,7 +514,7 @@ mod tests {
     #[test]
     fn test_tokenize_string() {
         let mut bracket_state = BracketState::new();
-        let tokens = tokenize_with_state("\"hello world\"", &mut bracket_state);
+        let tokens = tokenize_with_state("\"hello world\"", 0, 0, &mut bracket_state, &HashSet::new());
         assert_eq!(tokens.len(), 3);
         assert_eq!(tokens[0].content, "\"");
         assert_eq!(tokens[0].token_type, TokenType::String);
@@ -484,9 +525,22 @@ mod tests {
     }
 
     #[test]
+    fn test_tokenize_string_with_escape() {
+        let mut bracket_state = BracketState::new();
+        let tokens = tokenize_with_state(r#""hello \"world\"""#, 0, 0, &mut bracket_state, &HashSet::new());
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0].content, "\"");
+        assert_eq!(tokens[0].token_type, TokenType::String);
+        assert_eq!(tokens[1].content, r#"hello \"world\""#);
+        assert_eq!(tokens[1].token_type, TokenType::String);
+        assert_eq!(tokens[2].content, "\"");
+        assert_eq!(tokens[2].token_type, TokenType::String);
+    }
+
+    #[test]
     fn test_tokenize_comment() {
         let mut bracket_state = BracketState::new();
-        let tokens = tokenize_with_state("// this is a comment", &mut bracket_state);
+        let tokens = tokenize_with_state("// this is a comment", 0, 0, &mut bracket_state, &HashSet::new());
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0].content, "// this is a comment");
         assert_eq!(tokens[0].token_type, TokenType::Comment);
@@ -495,7 +549,7 @@ mod tests {
     #[test]
     fn test_tokenize_numbers() {
         let mut bracket_state = BracketState::new();
-        let tokens = tokenize_with_state("let x = 42;", &mut bracket_state);
+        let tokens = tokenize_with_state("let x = 42;", 0, 0, &mut bracket_state, &HashSet::new());
         let number_token = tokens.iter().find(|t| t.token_type == TokenType::Number);
         assert!(number_token.is_some());
         assert_eq!(number_token.unwrap().content, "42");
@@ -514,19 +568,19 @@ mod tests {
     #[test]
     fn test_macro_detection() {
         let mut bracket_state = BracketState::new();
-        let tokens = tokenize_with_state("println!(\"Hello\")", &mut bracket_state);
+        let tokens = tokenize_with_state("println!(\"Hello\")", 0, 0, &mut bracket_state, &HashSet::new());
         let macro_token = tokens.iter().find(|t| t.token_type == TokenType::Macro);
         assert!(macro_token.is_some());
         assert_eq!(macro_token.unwrap().content, "println!");
         
         let mut bracket_state = BracketState::new();
-        let tokens = tokenize_with_state("vec![1, 2, 3]", &mut bracket_state);
+        let tokens = tokenize_with_state("vec![1, 2, 3]", 0, 0, &mut bracket_state, &HashSet::new());
         let macro_token = tokens.iter().find(|t| t.token_type == TokenType::Macro);
         assert!(macro_token.is_some());
         assert_eq!(macro_token.unwrap().content, "vec!");
         
         let mut bracket_state = BracketState::new();
-        let tokens = tokenize_with_state("format!(\"test {}\", value)", &mut bracket_state);
+        let tokens = tokenize_with_state("format!(\"test {}\", value)", 0, 0, &mut bracket_state, &HashSet::new());
         let macro_token = tokens.iter().find(|t| t.token_type == TokenType::Macro);
         assert!(macro_token.is_some());
         assert_eq!(macro_token.unwrap().content, "format!");
@@ -536,14 +590,14 @@ mod tests {
     fn test_function_vs_macro_distinction() {
         // 関数呼び出し
         let mut bracket_state = BracketState::new();
-        let tokens = tokenize_with_state("some_function()", &mut bracket_state);
+        let tokens = tokenize_with_state("some_function()", 0, 0, &mut bracket_state, &HashSet::new());
         let func_token = tokens.iter().find(|t| t.token_type == TokenType::Function);
         assert!(func_token.is_some());
         assert_eq!(func_token.unwrap().content, "some_function");
         
         // マクロ呼び出し
         let mut bracket_state = BracketState::new();
-        let tokens = tokenize_with_state("some_macro!()", &mut bracket_state);
+        let tokens = tokenize_with_state("some_macro!()", 0, 0, &mut bracket_state, &HashSet::new());
         let macro_token = tokens.iter().find(|t| t.token_type == TokenType::Macro);
         assert!(macro_token.is_some());
         assert_eq!(macro_token.unwrap().content, "some_macro!");
@@ -553,7 +607,7 @@ mod tests {
     fn test_highlight_syntax_empty() {
         let theme = Theme::default();
         let mut bracket_state = BracketState::new();
-        let spans = highlight_syntax_with_state("", 4, &mut bracket_state, &theme);
+        let spans = highlight_syntax_with_state("", 0, 4, &mut bracket_state, &theme, &HashSet::new());
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].content, "");
     }
@@ -562,7 +616,7 @@ mod tests {
     fn test_highlight_syntax_with_indent() {
         let theme = Theme::default();
         let mut bracket_state = BracketState::new();
-        let spans = highlight_syntax_with_state("    fn main()", 4, &mut bracket_state, &theme);
+        let spans = highlight_syntax_with_state("    fn main()", 0, 4, &mut bracket_state, &theme, &HashSet::new());
         assert!(spans.len() > 1);
         // 最初のスパンはインデント
         // 後続のスパンはシンタックスハイライト
@@ -580,7 +634,7 @@ mod tests {
     #[test]
     fn test_bracket_nesting() {
         let mut bracket_state = BracketState::new();
-        let tokens = tokenize_with_state("((()))", &mut bracket_state);
+        let tokens = tokenize_with_state("((()))", 0, 0, &mut bracket_state, &HashSet::new());
         assert_eq!(tokens.len(), 6);
         assert_eq!(tokens[0].token_type, TokenType::Bracket { level: 0, is_matched: true }); // (
         assert_eq!(tokens[1].token_type, TokenType::Bracket { level: 1, is_matched: true }); // (
@@ -593,7 +647,7 @@ mod tests {
     #[test]
     fn test_mixed_brackets() {
         let mut bracket_state = BracketState::new();
-        let tokens = tokenize_with_state("([{}])", &mut bracket_state);
+        let tokens = tokenize_with_state("([{}])", 0, 0, &mut bracket_state, &HashSet::new());
         assert_eq!(tokens.len(), 6);
         assert_eq!(tokens[0].token_type, TokenType::Bracket { level: 0, is_matched: true }); // (
         assert_eq!(tokens[1].token_type, TokenType::Bracket { level: 1, is_matched: true }); // [
@@ -608,10 +662,10 @@ mod tests {
         let mut state = BracketState::new();
         assert_eq!(state.stack.len(), 0);
         
-        state.stack.push(('(', 0));
+        state.stack.push(('(', 0, 0));
         assert_eq!(state.stack.len(), 1);
         
-        state.stack.push(('[', 1));
+        state.stack.push(('[', 0, 1));
         assert_eq!(state.stack.len(), 2);
         
         state.stack.pop();
@@ -739,3 +793,33 @@ mod tests {
         assert_eq!(unmatched_brackets[0].content, ")"); // 余分な閉じ括弧が未対応
     }
 }
+
+
+    #[test]
+    fn test_unmatched_bracket_highlight_multiline() {
+        let lines = vec!["fn main() {", "    let x = 1;"];
+        let theme = Theme::default();
+        
+        // 1パス目: ファイル全体をスキャンして未対応の括弧を特定
+        let mut scan_state = BracketState::new();
+        for (i, line) in lines.iter().enumerate() {
+            let space_count = count_leading_spaces(line);
+            let content_part = &line[space_count..];
+            let _ = tokenize_with_state(content_part, i, space_count, &mut scan_state, &HashSet::new());
+        }
+        let unmatched_brackets: HashSet<(usize, usize)> = scan_state.stack.iter().map(|&(_, line, col)| (line, col)).collect();
+
+        // `{` が未対応として検出されていることを確認
+        assert!(unmatched_brackets.contains(&(0, 11)));
+
+        // 2パス目: ハイライト処理
+        let mut highlight_state = BracketState::new();
+        let spans = highlight_syntax_with_state(lines[0], 0, 4, &mut highlight_state, &theme, &unmatched_brackets);
+
+        let bracket_span = spans.iter().find(|s| s.content == "{").unwrap();
+        if let TokenType::Bracket { is_matched, .. } = bracket_span.style.user_data.get::<TokenType>().unwrap() {
+            assert!(!is_matched, "Opening bracket should be marked as unmatched");
+        } else {
+            panic!("Token is not a bracket");
+        }
+    }
