@@ -1,11 +1,11 @@
 use crate::app::{App, Mode};
-use crate::syntax::{highlight_syntax_with_state, highlight_syntax_with_unmatched, BracketState};
+use crate::syntax::{highlight_syntax_with_state, BracketState};
 use crate::constants::{editor, ui as ui_constants, file};
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Margin},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Clear},
     Frame,
 };
 use unicode_segmentation::UnicodeSegmentation;
@@ -16,7 +16,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let app_status_message = app.status_message.clone();
     let app_command_buffer = app.command_buffer.clone();
 
-    let main_chunks = if app.show_directory {
+    let is_floating = app.config.ui.directory_pane_floating;
+
+    let main_chunks = if app.show_directory && !is_floating {
         Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(app.config.ui.directory_pane_width), Constraint::Min(0)].as_ref())
@@ -28,21 +30,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             .split(f.size())
     };
 
-    if app.show_directory {
-        let directory_title = format!("Directory: {}", app.current_path.to_string_lossy());
-        let directory_block = Block::default().borders(Borders::ALL).title(directory_title);
-        let directory_list: Vec<Line> = app.directory_files.iter().enumerate().map(|(i, file)| {
-            if i == app.selected_directory_index {
-                Line::from(Span::styled(file, Style::default().bg(app.config.theme.ui.selection_background.clone().into())))
-            } else {
-                Line::from(file.as_str())
-            }
-        }).collect();
-        let directory_paragraph = Paragraph::new(directory_list).block(directory_block);
-        f.render_widget(directory_paragraph, main_chunks[0]);
-    }
-
-    let editor_chunk_index = if app.show_directory { 1 } else { 0 };
+    let editor_chunk_index = if app.show_directory && !is_floating { 1 } else { 0 };
     let editor_area = main_chunks[editor_chunk_index];
 
     // ペインマネージャーを使用してレイアウトを計算
@@ -65,6 +53,27 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // ペインを描画
     for (_, window_index, rect, is_active) in pane_info {
         draw_editor_pane(f, app, rect, window_index, is_active);
+    }
+
+    if app.show_directory {
+        let directory_title = format!("Directory: {}", app.current_path.to_string_lossy());
+        let directory_block = Block::default().borders(Borders::ALL).title(directory_title);
+        let directory_list: Vec<Line> = app.directory_files.iter().enumerate().map(|(i, file)| {
+            if i == app.selected_directory_index {
+                Line::from(Span::styled(file, Style::default().bg(app.config.theme.ui.selection_background.clone().into())))
+            } else {
+                Line::from(file.as_str())
+            }
+        }).collect();
+        let directory_paragraph = Paragraph::new(directory_list).block(directory_block);
+
+        if is_floating {
+            let area = centered_rect(60, 80, f.size());
+            f.render_widget(Clear, area); // this clears the background
+            f.render_widget(directory_paragraph, area);
+        } else {
+            f.render_widget(directory_paragraph, main_chunks[0]);
+        }
     }
 
     // ステータスバーの描画
@@ -113,10 +122,34 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     }
 }
 
+/// Helper function to create a centered rect using up certain percentage of the available rect `r`
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
+}
+
 fn draw_editor_pane(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect, window_index: usize, is_active: bool) {
     let window = &mut app.windows[window_index];
     let app_mode = app.mode;
     let config = &app.config;
+    
+    // シンタックスハイライトの更新完了をマーク
+    window.mark_syntax_updated();
 
     let border_style = if is_active { Style::default().fg(config.theme.ui.active_pane_border.clone().into()) } else { Style::default() };
     let editor_block = Block::default().borders(Borders::ALL).title(window.filename.as_deref().unwrap_or(file::DEFAULT_FILENAME)).border_style(border_style);
@@ -163,22 +196,29 @@ fn draw_editor_pane(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect, w
         f.render_widget(space_paragraph, editor_chunks[1]);
     }
 
-    // かっこの状態をリセットして、ファイル全体を通して追跡
-    let mut bracket_state = BracketState::new();
-    
-    // 表示される行より前の行も処理してかっこの状態を更新
-    for line_str in window.buffer.iter().take(window.scroll_y) {
-        highlight_syntax_with_state(line_str, config.editor.indent_width, &mut bracket_state, &config.theme);
+    // 1. ファイル全体をスキャンし、各行の開始時点での BracketState をキャッシュする
+    let mut states_by_line = Vec::with_capacity(window.buffer.len() + 1);
+    states_by_line.push(BracketState::new());
+    let mut current_state = BracketState::new();
+    for line_str in window.buffer.iter() {
+        // 状態更新のみ行い、スパン生成はしない
+        let space_count = crate::syntax::count_leading_spaces(line_str);
+        let content_part = &line_str[space_count..];
+        let _ = crate::syntax::tokenize_with_state(content_part, &mut current_state);
+        states_by_line.push(current_state.clone());
     }
 
+    // 2. 表示範囲の行をレンダリングする
     let text: Vec<Line> = window
         .buffer
         .iter()
+        .enumerate()
         .skip(window.scroll_y)
         .take(editor_area.height as usize)
-        .enumerate()
-        .map(|(i, line_str)| (i + window.scroll_y, line_str))
         .map(|(i, line_str)| {
+            // キャッシュした状態を使ってハイライト
+            let mut bracket_state = states_by_line[i].clone();
+
             if let (Mode::Visual, Some(start)) = (&app_mode, window.visual_start) {
                 if is_active {
                     let (start_x, start_y) = start;
@@ -204,13 +244,11 @@ fn draw_editor_pane(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect, w
                         let mut spans = Vec::new();
                         if highlight_start > 0 {
                             let s = graphemes[0..highlight_start].join("");
-                            let mut temp_bracket_state = bracket_state.clone();
-                            spans.extend(highlight_syntax_with_unmatched(&s, config.editor.indent_width, &mut temp_bracket_state, &window.unmatched_brackets, &config.theme));
+                            spans.extend(highlight_syntax_with_state(&s, config.editor.indent_width, &mut bracket_state, &config.theme));
                         }
                         if highlight_start < highlight_end {
                             let selected_text = graphemes[highlight_start..highlight_end].join("");
-                            let mut temp_bracket_state = bracket_state.clone();
-                            let highlighted_selected_spans = highlight_syntax_with_unmatched(&selected_text, config.editor.indent_width, &mut temp_bracket_state, &window.unmatched_brackets, &config.theme)
+                            let highlighted_selected_spans = highlight_syntax_with_state(&selected_text, config.editor.indent_width, &mut bracket_state, &config.theme)
                                 .into_iter()
                                 .map(|mut span| {
                                     span.style = span.style.bg(config.theme.ui.visual_selection_background.clone().into());
@@ -221,16 +259,13 @@ fn draw_editor_pane(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect, w
                         }
                         if highlight_end < line_len {
                             let s = graphemes[highlight_end..line_len].join("");
-                            let mut temp_bracket_state = bracket_state.clone();
-                            spans.extend(highlight_syntax_with_unmatched(&s, config.editor.indent_width, &mut temp_bracket_state, &window.unmatched_brackets, &config.theme));
+                            spans.extend(highlight_syntax_with_state(&s, config.editor.indent_width, &mut bracket_state, &config.theme));
                         }
-                        // この行のかっこ状態を更新
-                        highlight_syntax_with_unmatched(line_str, config.editor.indent_width, &mut bracket_state, &window.unmatched_brackets, &config.theme);
                         return Line::from(spans);
                     }
                 }
             }
-            Line::from(highlight_syntax_with_unmatched(line_str, config.editor.indent_width, &mut bracket_state, &window.unmatched_brackets, &config.theme))
+            Line::from(highlight_syntax_with_state(line_str, config.editor.indent_width, &mut bracket_state, &config.theme))
         })
         .collect();
     let editor_paragraph = Paragraph::new(text).scroll((0, window.scroll_x as u16));

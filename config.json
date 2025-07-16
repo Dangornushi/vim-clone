@@ -13,6 +13,7 @@
     "directory_pane_width": 30,
     "status_bar_height": 1,
     "show_directory_pane": false,
+    "directory_pane_floating": true,
     "editor_margins": {
       "vertical": 1,
       "horizontal": 1

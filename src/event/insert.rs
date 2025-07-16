@@ -41,7 +41,7 @@ pub fn handle_insert_mode_event(app: &mut App, key_code: KeyCode) {
                 current_window.buffer.insert(current_window.cursor_y + 1, indented_new_line);
                 current_window.cursor_y += 1;
                 current_window.cursor_x = indent.len();
-                current_window.update_unmatched_brackets();
+                current_window.on_line_inserted(current_window.cursor_y);
             } else {
                 // 挿入モード中は状態を保存しない
                 let mut graphemes: Vec<String> =
@@ -68,14 +68,14 @@ pub fn handle_insert_mode_event(app: &mut App, key_code: KeyCode) {
                         graphemes.insert(current_window.cursor_x, c.to_string());
                         graphemes.insert(current_window.cursor_x + 1, closing.to_string());
                         current_window.buffer[current_window.cursor_y] = graphemes.join("");
+                        current_window.on_char_inserted(current_window.cursor_y, current_window.cursor_x, c);
                         current_window.cursor_x += 1;
-                        current_window.update_unmatched_brackets();
                     } else {
                         let char_str = c.to_string();
                         graphemes.insert(current_window.cursor_x, char_str);
                         current_window.buffer[current_window.cursor_y] = graphemes.join("");
+                        current_window.on_char_inserted(current_window.cursor_y, current_window.cursor_x, c);
                         current_window.cursor_x += 1;
-                        current_window.update_unmatched_brackets();
                     }
                 }
             }
@@ -102,17 +102,19 @@ pub fn handle_insert_mode_event(app: &mut App, key_code: KeyCode) {
                     }
                 }
 
+                let deleted_char = removed_grapheme.chars().next().unwrap_or(' ');
                 current_window.cursor_x -= 1;
                 graphemes.remove(removed_grapheme_index);
                 current_window.buffer[current_window.cursor_y] = graphemes.join("");
-                current_window.update_unmatched_brackets();
+                current_window.on_char_deleted(current_window.cursor_y, current_window.cursor_x, deleted_char);
             } else if current_window.cursor_y > 0 {
                 let prev_line_len_graphemes = current_window.buffer[current_window.cursor_y - 1].graphemes(true).count();
                 let current_line_content = current_window.buffer.remove(current_window.cursor_y);
                 current_window.buffer[current_window.cursor_y - 1].push_str(&current_line_content);
+                let deleted_line_index = current_window.cursor_y;
                 current_window.cursor_y -= 1;
                 current_window.cursor_x = prev_line_len_graphemes;
-                current_window.update_unmatched_brackets();
+                current_window.on_line_deleted(deleted_line_index);
             }
         }
         KeyCode::Enter => {
@@ -146,7 +148,7 @@ pub fn handle_insert_mode_event(app: &mut App, key_code: KeyCode) {
             current_window.buffer.insert(current_window.cursor_y + 1, indented_new_line);
             current_window.cursor_y += 1;
             current_window.cursor_x = indent.len();
-            current_window.update_unmatched_brackets();
+            current_window.on_line_inserted(current_window.cursor_y);
         }
         KeyCode::Tab => {
             // 挿入モード中は状態を保存しない
@@ -156,7 +158,7 @@ pub fn handle_insert_mode_event(app: &mut App, key_code: KeyCode) {
                 current_window.cursor_x += 1;
             }
             current_window.buffer[current_window.cursor_y] = graphemes.join("");
-            current_window.update_unmatched_brackets();
+            current_window.mark_line_modified(current_window.cursor_y);
         }
         KeyCode::Esc => {
             let current_window = app.current_window();

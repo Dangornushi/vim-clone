@@ -9,18 +9,18 @@
     "type": [250, 189, 47],
     "identifier": [235, 219, 178],
     "operator": [254, 128, 25],
-    "symbol": [235, 219, 178],
+    "symbol": [215, 199, 158],
     "bracket_colors": [
       [235, 219, 178],
-      [251, 73, 52],
+      [254, 128, 25],
       [184, 187, 38],
       [131, 165, 152],
       [250, 189, 47],
       [211, 134, 155],
       [142, 192, 124]
     ],
-    "unmatched_bracket_fg": "Red",
-    "unmatched_bracket_bg": [60, 56, 54]
+    "unmatched_bracket_fg": [255, 255, 0],
+    "unmatched_bracket_bg": [255, 0, 0]
   },
   "ui": {
     "active_pane_border": [250, 189, 47],

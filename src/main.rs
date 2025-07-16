@@ -33,7 +33,6 @@ use clap::Parser;
 struct Args {
     /// File to open
     file: Option<String>,
-
     #[command(subcommand)]
     command: Option<Subcommands>,
 }

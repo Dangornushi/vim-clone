@@ -4,13 +4,9 @@ pub mod config;
 
 // 公開API
 pub use syntax::{
-    highlight_syntax, 
     highlight_syntax_with_state,
-    highlight_syntax_with_unmatched,
-    detect_unmatched_brackets_in_file,
-    tokenize, 
     tokenize_with_state,
-    count_leading_spaces, 
+    count_leading_spaces,
     create_indent_spans,
     Token,
     TokenType,

@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use vim_editor::config::Theme;
-use vim_editor::syntax::{highlight_syntax, tokenize, count_leading_spaces, create_indent_spans};
+use vim_editor::syntax::{count_leading_spaces, create_indent_spans, highlight_syntax_with_state, tokenize_with_state, BracketState};
 
 fn benchmark_highlight_syntax(c: &mut Criterion) {
     let test_lines = vec![
@@ -21,7 +21,7 @@ fn benchmark_highlight_syntax(c: &mut Criterion) {
         let theme = Theme::default();
         b.iter(|| {
             for line in &test_lines {
-                black_box(highlight_syntax(black_box(line), black_box(4), black_box(&theme)));
+                black_box(highlight_syntax_with_state(black_box(line), 4, &mut BracketState::new(), black_box(&theme)));
             }
         })
     });
@@ -32,7 +32,7 @@ fn benchmark_highlight_syntax(c: &mut Criterion) {
     c.bench_function("highlight_syntax_long_line", |b| {
         let theme = Theme::default();
         b.iter(|| {
-            black_box(highlight_syntax(black_box(&long_line), black_box(4), black_box(&theme)));
+            black_box(highlight_syntax_with_state(black_box(&long_line), 4, &mut BracketState::new(), black_box(&theme)));
         })
     });
 
@@ -42,7 +42,7 @@ fn benchmark_highlight_syntax(c: &mut Criterion) {
     c.bench_function("highlight_syntax_deep_indent", |b| {
         let theme = Theme::default();
         b.iter(|| {
-            black_box(highlight_syntax(black_box(&deep_indent_line), black_box(4), black_box(&theme)));
+            black_box(highlight_syntax_with_state(black_box(&deep_indent_line), 4, &mut BracketState::new(), black_box(&theme)));
         })
     });
 }
@@ -52,7 +52,7 @@ fn benchmark_tokenize(c: &mut Criterion) {
     
     c.bench_function("tokenize_complex", |b| {
         b.iter(|| {
-            black_box(tokenize(black_box(complex_code)));
+            black_box(tokenize_with_state(black_box(complex_code), &mut BracketState::new()));
         })
     });
 
@@ -60,7 +60,7 @@ fn benchmark_tokenize(c: &mut Criterion) {
     
     c.bench_function("tokenize_simple", |b| {
         b.iter(|| {
-            black_box(tokenize(black_box(simple_code)));
+            black_box(tokenize_with_state(black_box(simple_code), &mut BracketState::new()));
         })
     });
 
@@ -69,7 +69,7 @@ fn benchmark_tokenize(c: &mut Criterion) {
     
     c.bench_function("tokenize_string_heavy", |b| {
         b.iter(|| {
-            black_box(tokenize(black_box(string_heavy)));
+            black_box(tokenize_with_state(black_box(string_heavy), &mut BracketState::new()));
         })
     });
 }
@@ -115,7 +115,7 @@ fn benchmark_large_file_simulation(c: &mut Criterion) {
         let theme = Theme::default();
         b.iter(|| {
             for line in &large_file_lines {
-                black_box(highlight_syntax(black_box(line), black_box(4), black_box(&theme)));
+                black_box(highlight_syntax_with_state(black_box(line), 4, &mut BracketState::new(), black_box(&theme)));
             }
         })
     });
@@ -131,7 +131,7 @@ fn benchmark_memory_intensive(c: &mut Criterion) {
         let theme = Theme::default();
         b.iter(|| {
             for line in &lines_with_many_tokens {
-                black_box(highlight_syntax(black_box(line), black_box(4), black_box(&theme)));
+                black_box(highlight_syntax_with_state(black_box(line), 4, &mut BracketState::new(), black_box(&theme)));
             }
         })
     });

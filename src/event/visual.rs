@@ -96,7 +96,6 @@ pub fn handle_visual_mode_event(app: &mut App, key_code: KeyCode) {
                             current_window.buffer.drain(start_of_removal..=sel_end_y);
                         }
                     }
-                    current_window.update_unmatched_brackets();
                 }
 
                 // Set cursor position
@@ -107,10 +106,9 @@ pub fn handle_visual_mode_event(app: &mut App, key_code: KeyCode) {
                     current_window.buffer.push(String::new());
                     current_window.cursor_y = 0;
                     current_window.cursor_x = 0;
-                    current_window.update_unmatched_brackets();
                 } else {
                     if current_window.cursor_y >= current_window.buffer.len() {
-                        current_window.cursor_y = current_window.buffer.len() - 1;
+                        current_window.cursor_y = current_window.buffer.len().saturating_sub(1);
                     }
                     if current_window.cursor_x > current_window.buffer[current_window.cursor_y].graphemes(true).count() {
                         current_window.cursor_x = current_window.buffer[current_window.cursor_y].graphemes(true).count();

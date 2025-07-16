@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 use arboard::Clipboard;
-use crate::{pane::PaneManager, config::{Config, EditorConfig, UiConfig, KeyBindings}, syntax::{BracketState, detect_unmatched_brackets_in_file}};
+use crate::{pane::PaneManager, config::{Config, EditorConfig, UiConfig, KeyBindings}};
 use serde::Serialize;
 
 // Define the editor modes
@@ -34,11 +34,11 @@ pub struct Window {
     pub filename: Option<String>,
     pub visual_start: Option<(usize, usize)>,
     pub yanked_text: String,
-    pub bracket_state: BracketState,
-    pub unmatched_brackets: Vec<(usize, usize)>, // (行番号, 位置)
     pub undo_stack: Vec<WindowState>,
     pub redo_stack: Vec<WindowState>,
     pub insert_mode_start_state: Option<WindowState>, // 挿入モード開始時の状態
+    pub needs_syntax_update: bool, // シンタックスハイライトの更新が必要かどうか
+    pub last_modified_line: Option<usize>, // 最後に変更された行番号
 }
 
 impl Window {
@@ -50,8 +50,6 @@ impl Window {
         } else {
             vec![String::new()]
         };
-
-        let unmatched_brackets = detect_unmatched_brackets_in_file(&buffer);
         
         Self {
             buffer,
@@ -62,11 +60,11 @@ impl Window {
             filename,
             visual_start: None,
             yanked_text: String::new(),
-            bracket_state: BracketState::new(),
-            unmatched_brackets,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             insert_mode_start_state: None,
+            needs_syntax_update: true,
+            last_modified_line: None,
         }
     }
 
@@ -76,7 +74,7 @@ impl Window {
             for line in &self.buffer {
                 writeln!(file, "{}", line)?;
             }
-            self.update_unmatched_brackets();
+            // 括弧の状態更新は不要になったため削除
             Ok(())
         } else {
             Err(io::Error::new(io::ErrorKind::Other, "No file name"))
@@ -109,7 +107,7 @@ impl Window {
                         self.scroll_y = self.buffer.len().saturating_sub(1);
                     }
                     
-                    self.update_unmatched_brackets();
+                    // 括弧の状態更新は不要になったため削除
                     Ok(())
                 }
                 Err(e) => Err(e),
@@ -119,8 +117,41 @@ impl Window {
         }
     }
 
-    pub fn update_unmatched_brackets(&mut self) {
-        self.unmatched_brackets = detect_unmatched_brackets_in_file(&self.buffer);
+    // update_unmatched_brackets 関数は不要になったため削除
+
+    /// 特定の行が変更されたときに呼び出す
+    pub fn mark_line_modified(&mut self, line_index: usize) {
+        self.last_modified_line = Some(line_index);
+        self.needs_syntax_update = true;
+        // 括弧の状態更新は不要になったため削除
+    }
+
+    /// 文字が挿入されたときに呼び出す
+    pub fn on_char_inserted(&mut self, line_index: usize, _char_index: usize, _ch: char) {
+        self.mark_line_modified(line_index);
+    }
+
+    /// 文字が削除されたときに呼び出す
+    pub fn on_char_deleted(&mut self, line_index: usize, _char_index: usize, _ch: char) {
+        self.mark_line_modified(line_index);
+    }
+
+    /// 行が挿入されたときに呼び出す
+    pub fn on_line_inserted(&mut self, line_index: usize) {
+        self.mark_line_modified(line_index);
+        // 括弧の状態更新は不要になったため削除
+    }
+
+    /// 行が削除されたときに呼び出す
+    pub fn on_line_deleted(&mut self, line_index: usize) {
+        self.mark_line_modified(line_index);
+        // 括弧の状態更新は不要になったため削除
+    }
+
+    /// シンタックスハイライトの更新完了をマーク
+    pub fn mark_syntax_updated(&mut self) {
+        self.needs_syntax_update = false;
+        self.last_modified_line = None;
     }
 
     pub fn save_state(&mut self) {
@@ -191,7 +222,6 @@ impl Window {
                 }
             }
             
-            self.update_unmatched_brackets();
             true
         } else {
             false
@@ -224,7 +254,6 @@ impl Window {
                 }
             }
             
-            self.update_unmatched_brackets();
             true
         } else {
             false
@@ -257,7 +286,6 @@ impl Window {
         self.buffer.insert(new_line_y, String::new());
         self.cursor_y = new_line_y;
         self.cursor_x = 0;
-        self.update_unmatched_brackets();
     }
 }
 
@@ -358,6 +386,7 @@ impl App {
             - Directory pane width: {}\n\
             - Status bar height: {}\n\
             - Show directory pane: {}\n\
+             - Directory pane floating: {}\n\
             - Editor margins: vertical={}, horizontal={}",
             self.config.editor.indent_width,
             self.config.editor.show_line_numbers,
@@ -370,6 +399,7 @@ impl App {
             self.config.ui.directory_pane_width,
             self.config.ui.status_bar_height,
             self.config.ui.show_directory_pane,
+            self.config.ui.directory_pane_floating,
             self.config.ui.editor_margins.vertical,
             self.config.ui.editor_margins.horizontal
         );
@@ -490,6 +520,23 @@ impl App {
                     }
                 } else {
                     self.status_message = "Invalid value for directory_pane_width (must be a number)".to_string();
+                }
+            }
+            "directory_pane_floating" | "dirfloat" => {
+                match value.to_lowercase().as_str() {
+                    "true" | "1" | "on" | "yes" => {
+                        self.config.ui.directory_pane_floating = true;
+                        App::save_config(&self.config);
+                        self.status_message = "Directory pane floating enabled".to_string();
+                    }
+                    "false" | "0" | "off" | "no" => {
+                        self.config.ui.directory_pane_floating = false;
+                        App::save_config(&self.config);
+                        self.status_message = "Directory pane floating disabled".to_string();
+                    }
+                    _ => {
+                        self.status_message = "Invalid value for directory_pane_floating (use true/false)".to_string();
+                    }
                 }
             }
             "theme" => {

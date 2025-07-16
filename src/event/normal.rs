@@ -80,6 +80,7 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                     current_window.save_state(); // 変更前の状態を保存
                     let mut graphemes: Vec<String> = current_window.buffer[current_window.cursor_y].graphemes(true).map(String::from).collect();
                     if current_window.cursor_x < graphemes.len() {
+                        let deleted_char = graphemes[current_window.cursor_x].chars().next().unwrap_or(' ');
                         graphemes.remove(current_window.cursor_x);
                         current_window.buffer[current_window.cursor_y] = graphemes.join("");
                         if current_window.cursor_x >= graphemes.len() && !graphemes.is_empty() {
@@ -87,7 +88,7 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                         } else if graphemes.is_empty() {
                             current_window.cursor_x = 0;
                         }
-                        current_window.update_unmatched_brackets();
+                        current_window.on_char_deleted(current_window.cursor_y, current_window.cursor_x, deleted_char);
                     }
                 }
                 "mode_insert" => {
@@ -124,8 +125,9 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                                 lines[last_line_index].push_str(&rest_of_current_line);
                                 for (i, line) in lines.iter().skip(1).enumerate() {
                                     current_window.buffer.insert(current_window.cursor_y + 1 + i, line.clone());
+                                    current_window.on_line_inserted(current_window.cursor_y + 1 + i);
                                 }
-                                current_window.update_unmatched_brackets();
+                                current_window.mark_line_modified(current_window.cursor_y);
                             } else {
                                 if !current_window.buffer[current_window.cursor_y].is_empty() {
                                     current_window.cursor_x += 1;
@@ -134,7 +136,7 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                                 let byte_index = current_line_ref.grapheme_indices(true).nth(current_window.cursor_x).map(|(i, _)| i).unwrap_or(current_line_ref.len());
                                 current_line_ref.insert_str(byte_index, &text);
                                 current_window.cursor_x += text.graphemes(true).count();
-                                current_window.update_unmatched_brackets();
+                                current_window.mark_line_modified(current_window.cursor_y);
                             }
                         }
                     }

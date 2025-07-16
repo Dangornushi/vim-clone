@@ -139,6 +139,7 @@ pub struct UiConfig {
     pub directory_pane_width: u16,
     pub status_bar_height: u16,
     pub show_directory_pane: bool,
+    pub directory_pane_floating: bool,
     pub editor_margins: EditorMargins,
 }
 
@@ -181,6 +182,7 @@ impl Default for UiConfig {
             directory_pane_width: 30,
             status_bar_height: 1,
             show_directory_pane: false,
+            directory_pane_floating: false,
             editor_margins: EditorMargins::default(),
         }
     }
