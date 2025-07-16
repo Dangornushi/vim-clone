@@ -41,7 +41,7 @@ pub fn run_app<B: Backend + std::io::Write>(terminal: &mut Terminal<B>, mut app:
                     Mode::Insert => insert::handle_insert_mode_event(&mut app, key.code),
                     Mode::Visual => visual::handle_visual_mode_event(&mut app, key.code),
                     Mode::Command => {
-                        if let Some(_) = command::handle_command_mode_event(&mut app, key.code)? {
+                        if (command::handle_command_mode_event(&mut app, key.code)?).is_some() {
                             return Ok(());
                         }
                     }

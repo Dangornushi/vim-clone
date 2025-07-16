@@ -69,6 +69,7 @@ pub struct UiTheme {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Default)]
 pub struct Theme {
     pub syntax: SyntaxTheme,
     pub ui: UiTheme,
@@ -144,6 +145,7 @@ pub struct UiConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[derive(Default)]
 pub struct Config {
     pub editor: EditorConfig,
     pub ui: UiConfig,
@@ -239,14 +241,6 @@ impl Default for UiTheme {
     }
 }
 
-impl Default for Theme {
-    fn default() -> Self {
-        Self {
-            syntax: SyntaxTheme::default(),
-            ui: UiTheme::default(),
-        }
-    }
-}
 
 impl Config {
     pub fn with_theme(mut self) -> Self {
@@ -255,13 +249,3 @@ impl Config {
     }
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            editor: EditorConfig::default(),
-            ui: UiConfig::default(),
-            key_bindings: KeyBindings::default(),
-            theme: Theme::default(),
-        }
-    }
-}

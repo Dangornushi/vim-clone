@@ -196,22 +196,36 @@ fn draw_editor_pane(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect, w
         f.render_widget(space_paragraph, editor_chunks[1]);
     }
 
-    // 1. ファイル全体をスキャンし、閉じられていない開き括弧を特定し、
-    //    同時に各行の開始時点での BracketState をキャッシュする
+    // 1パス目: ファイル全体をスキャンし、未対応の括弧を特定し、
+    //          同時に各行の開始時点での BracketState をキャッシュする
     let mut states_by_line = Vec::with_capacity(window.buffer.len() + 1);
     states_by_line.push(BracketState::new());
     let mut current_state = BracketState::new();
-    let empty_unmatched = std::collections::HashSet::new();
+    let mut all_unmatched_brackets: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
+    
     for (i, line_str) in window.buffer.iter().enumerate() {
         let space_count = crate::syntax::count_leading_spaces(line_str);
         let content_part = &line_str[space_count..];
-        // このループでは状態の更新とキャッシュが目的なので、unmatched_brackets は空のセットを渡す
-        let _ = crate::syntax::tokenize_with_state(content_part, i, space_count, &mut current_state, &empty_unmatched);
+        // 1パス目では、unmatched_brackets は空のセットを渡し、
+        // tokenize_with_state は自身のスタックに基づいてis_matchedを決定する
+        let tokens = crate::syntax::tokenize_with_state(content_part, i, space_count, &mut current_state);
+        
+        // この行で未対応とマークされた閉じ括弧を収集
+        for token in tokens {
+            if let crate::syntax::TokenType::Bracket { is_matched: false, .. } = token.token_type {
+                // 閉じ括弧で、かつマッチしていない場合
+                if token.content == ")" || token.content == "]" || token.content == "}" {
+                    all_unmatched_brackets.insert((i, space_count + token.start));
+                }
+            }
+        }
         states_by_line.push(current_state.clone());
     }
     // スキャン完了後、スタックに残っているものが閉じられていない開き括弧
-    let unmatched_brackets: std::collections::HashSet<(usize, usize)> = 
-        current_state.stack.iter().map(|&(_, line, col)| (line, col)).collect();
+    for &(_, line, col) in &current_state.stack {
+        all_unmatched_brackets.insert((line, col));
+    }
+    let unmatched_brackets = all_unmatched_brackets; // 名前を合わせる
 
     // 2. 表示範囲の行をレンダリングする
     let text: Vec<Line> = window

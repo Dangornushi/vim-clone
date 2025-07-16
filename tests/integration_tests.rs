@@ -5,14 +5,12 @@ use vim_editor::syntax::{highlight_syntax_with_state, count_leading_spaces, crea
 #[test]
 fn test_syntax_highlighting_integration() {
     // Rustコードの例
-    let code_lines = vec![
-        "fn main() {",
+    let code_lines = ["fn main() {",
         "    let x = 42;",
         "    if x > 0 {",
         r#"        println!("Hello, world!");"#,
         "    }",
-        "}",
-    ];
+        "}"];
     
     let theme = Theme::default();
     let unmatched_brackets = HashSet::new();
@@ -90,7 +88,7 @@ fn test_string_handling() {
     
     // 文字列部分が正しく処理されているかチェック
     assert!(spans.iter().any(|s| s.content.contains("Hello")));
-    assert!(spans.iter().any(|s| s.content == "\""));
+    assert!(spans.iter().any(|s| s.content == r#""Hello, \"world\"!""#));
 }
 
 #[test]
@@ -113,12 +111,13 @@ fn test_empty_and_whitespace_lines() {
     assert_eq!(spans[0].content, "");
     
     // 空白のみの行
-    let spans = highlight_syntax_with_state("    ", 0, 0, &mut BracketState::new(), &theme, unmatched_brackets);
-    assert_eq!(spans.len(), 1); // インデントスパンのみ
+    let spans = highlight_syntax_with_state("    ", 0, 4, &mut BracketState::new(), &theme, unmatched_brackets);
+    assert_eq!(spans.len(), 1); // 4スペースのインデントスパン
+    assert_eq!(spans[0].content, "    ");
     
     // タブ混在（スペースのみをインデントとして扱う）
     let spans = highlight_syntax_with_state("\t    hello", 0, 0, &mut BracketState::new(), &theme, unmatched_brackets);
-    assert!(spans.len() >= 1);
+    assert!(!spans.is_empty());
 }
 
 #[test]

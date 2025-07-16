@@ -4,8 +4,7 @@ use vim_editor::config::Theme;
 use vim_editor::syntax::{count_leading_spaces, create_indent_spans, highlight_syntax_with_state, tokenize_with_state, BracketState};
 
 fn benchmark_highlight_syntax(c: &mut Criterion) {
-    let test_lines = vec![
-        "fn main() {",
+    let test_lines = ["fn main() {",
         "    let mut map = HashMap::new();",
         "    for (index, &value) in data.iter().enumerate() {",
         "        if value > 0 {",
@@ -15,8 +14,7 @@ fn benchmark_highlight_syntax(c: &mut Criterion) {
         "        }",
         "    }",
         "    Ok(map)",
-        "}",
-    ];
+        "}"];
 
     c.bench_function("highlight_syntax_simple", |b| {
         let theme = Theme::default();
@@ -29,7 +27,7 @@ fn benchmark_highlight_syntax(c: &mut Criterion) {
     });
 
     // 長い行のテスト
-    let long_line = "    ".repeat(10) + &"let very_long_variable_name_that_should_test_performance = some_function_call_with_many_parameters(param1, param2, param3, param4, param5);";
+    let long_line = "    ".repeat(10) + "let very_long_variable_name_that_should_test_performance = some_function_call_with_many_parameters(param1, param2, param3, param4, param5);";
     
     c.bench_function("highlight_syntax_long_line", |b| {
         let theme = Theme::default();
@@ -55,18 +53,16 @@ fn benchmark_tokenize(c: &mut Criterion) {
     let complex_code = "fn process_data(data: &[i32]) -> Result<HashMap<String, i32>, Box<dyn std::error::Error>> {";
     
     c.bench_function("tokenize_complex", |b| {
-        let unmatched_brackets = HashSet::new();
         b.iter(|| {
-            black_box(tokenize_with_state(black_box(complex_code), 0, 0, &mut BracketState::new(), &unmatched_brackets));
+            black_box(tokenize_with_state(black_box(complex_code), 0, 0, &mut BracketState::new()));
         })
     });
 
     let simple_code = "let x = 42;";
     
     c.bench_function("tokenize_simple", |b| {
-        let unmatched_brackets = HashSet::new();
         b.iter(|| {
-            black_box(tokenize_with_state(black_box(simple_code), 0, 0, &mut BracketState::new(), &unmatched_brackets));
+            black_box(tokenize_with_state(black_box(simple_code), 0, 0, &mut BracketState::new()));
         })
     });
 
@@ -74,9 +70,8 @@ fn benchmark_tokenize(c: &mut Criterion) {
     let string_heavy = "println!(\"Hello, {}! Welcome to {} version {}\", name, app_name, version);";
     
     c.bench_function("tokenize_string_heavy", |b| {
-        let unmatched_brackets = HashSet::new();
         b.iter(|| {
-            black_box(tokenize_with_state(black_box(string_heavy), 0, 0, &mut BracketState::new(), &unmatched_brackets));
+            black_box(tokenize_with_state(black_box(string_heavy), 0, 0, &mut BracketState::new()));
         })
     });
 }

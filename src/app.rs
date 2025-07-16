@@ -77,7 +77,7 @@ impl Window {
             // 括弧の状態更新は不要になったため削除
             Ok(())
         } else {
-            Err(io::Error::new(io::ErrorKind::Other, "No file name"))
+            Err(io::Error::other("No file name"))
         }
     }
 
@@ -113,7 +113,7 @@ impl Window {
                 Err(e) => Err(e),
             }
         } else {
-            Err(io::Error::new(io::ErrorKind::Other, "No file name to reload"))
+            Err(io::Error::other("No file name to reload"))
         }
     }
 
@@ -511,7 +511,7 @@ impl App {
             // UI settings
             "directory_pane_width" | "dirwidth" => {
                 if let Ok(val) = value.parse::<u16>() {
-                    if val >= 10 && val <= 100 {
+                    if (10..=100).contains(&val) {
                         self.config.ui.directory_pane_width = val;
                         App::save_config(&self.config);
                         self.status_message = format!("directory_pane_width set to {}", val);
