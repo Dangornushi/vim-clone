@@ -2,6 +2,7 @@
 
 Vimと同じ動きをするエディタをAIの力で作り直す試み
 
+<img width="190*2" height="102*2" alt="vim clone" src="https://github.com/user-attachments/assets/4dc564bd-1f93-4168-9ce1-9566834de66d" />
 
 ## Usage
 
