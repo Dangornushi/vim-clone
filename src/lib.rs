@@ -15,11 +15,7 @@ pub use syntax::{
     BracketState,
 };
 
-pub use window::{
-    Window,
-    WindowState,
-    Mode,
-};
+// pub use window::Mode;
 
 pub use app_config::{
     ConfigManager,

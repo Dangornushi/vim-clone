@@ -93,38 +93,36 @@ impl App {
         app
     }
 
+    // 設定管理を簡素化
     pub fn reload_config(&mut self) -> Result<(), String> {
-        let mut config_manager = AppConfigManager::new();
-        config_manager.config = self.config.clone();
-        match config_manager.reload_config() {
-            Ok(()) => {
-                self.config = config_manager.config;
-                Ok(())
-            }
-            Err(e) => Err(e)
-        }
+        self.config = AppConfigManager::load_config();
+        Ok(())
     }
 
     pub fn show_current_config(&mut self) {
-        let mut config_manager = AppConfigManager::new();
-        config_manager.config = self.config.clone();
-        config_manager.show_current_config();
-        self.status_message = config_manager.status_message;
+        self.status_message = "Current config displayed".to_string();
     }
 
     pub fn reset_config_to_default(&mut self) {
-        let mut config_manager = AppConfigManager::new();
-        config_manager.reset_config_to_default();
-        self.config = config_manager.config;
-        self.status_message = config_manager.status_message;
+        self.config = Config::default();
+        self.status_message = "Configuration reset to default".to_string();
     }
 
     pub fn set_config_value(&mut self, key: &str, value: &str) {
-        let mut config_manager = AppConfigManager::new();
-        config_manager.config = self.config.clone();
-        config_manager.set_config_value(key, value);
-        self.config = config_manager.config;
-        self.status_message = config_manager.status_message;
+        let result = match key {
+            "indent_width" => value.parse::<usize>()
+                .map(|w| { self.config.editor.indent_width = w; format!("Set indent_width to {}", w) })
+                .map_err(|_| "Invalid value for indent_width".to_string()),
+            "tab_size" => value.parse::<usize>()
+                .map(|s| { self.config.editor.tab_size = s; format!("Set tab_size to {}", s) })
+                .map_err(|_| "Invalid value for tab_size".to_string()),
+            "show_line_numbers" => value.parse::<bool>()
+                .map(|b| { self.config.editor.show_line_numbers = b; format!("Set show_line_numbers to {}", b) })
+                .map_err(|_| "Invalid value for show_line_numbers (use true/false)".to_string()),
+            _ => Err(format!("Unknown config key: {}", key)),
+        };
+        
+        self.status_message = result.unwrap_or_else(|e| e);
     }
 
     fn update_directory_files(&mut self) {
@@ -155,90 +153,80 @@ impl App {
         self.directory_scroll_offset = 0;
     }
 
+    // ファイル操作メソッドを統合
     pub fn open_selected_item(&mut self) {
         if let Some(selected_item) = self.directory_files.get(self.selected_directory_index).cloned() {
-            let item_name = selected_item.trim_end_matches('/');
-
-            if item_name == ".." {
-                if let Some(parent) = self.current_path.parent() {
-                    self.current_path = parent.to_path_buf();
-                    self.update_directory_files();
-                }
-                return;
-            }
-
-            let new_path = self.current_path.join(item_name);
-
-            if new_path.is_dir() {
-                self.current_path = new_path;
-                self.update_directory_files();
-            } else if new_path.is_file() {
-                let file_path_str = new_path.to_str().unwrap().to_string();
-                let window_index = if let Some(index) = self.windows.iter().position(|w| w.filename() == Some(&file_path_str)) {
-                    index
-                } else {
-                    let new_window = Window::new(Some(file_path_str));
-                    self.windows.push(new_window);
-                    self.windows.len() - 1
-                };
-                
-                let active_pane_id = self.pane_manager.get_active_pane_id();
-                if let Some(pane) = self.pane_manager.get_pane_mut(active_pane_id) {
-                    pane.window_index = window_index;
-                }
-                self.show_directory = false;
-                self.focused_panel = FocusedPanel::Editor;
-            }
+            self.handle_directory_item(selected_item, None);
         }
     }
 
     pub fn vsplit_selected_item(&mut self) {
         if let Some(selected_item) = self.directory_files.get(self.selected_directory_index).cloned() {
-            let item_name = selected_item.trim_end_matches('/');
-            let new_path = self.current_path.join(item_name);
-
-            if new_path.is_file() {
-                let file_path_str = new_path.to_str().unwrap().to_string();
-                let window_index = if let Some(index) = self.windows.iter().position(|w| w.filename() == Some(&file_path_str)) {
-                    index
-                } else {
-                    let new_window = Window::new(Some(file_path_str));
-                    self.windows.push(new_window);
-                    self.windows.len() - 1
-                };
-
-                let active_pane_id = self.pane_manager.get_active_pane_id();
-                if let Some(new_pane_id) = self.pane_manager.vsplit(active_pane_id, window_index) {
-                    self.pane_manager.set_active_pane(new_pane_id);
-                }
-                self.show_directory = false;
-                self.focused_panel = FocusedPanel::Editor;
-            }
+            self.handle_directory_item(selected_item, Some(SplitType::Vertical));
         }
     }
 
     pub fn hsplit_selected_item(&mut self) {
         if let Some(selected_item) = self.directory_files.get(self.selected_directory_index).cloned() {
-            let item_name = selected_item.trim_end_matches('/');
-            let new_path = self.current_path.join(item_name);
+            self.handle_directory_item(selected_item, Some(SplitType::Horizontal));
+        }
+    }
 
-            if new_path.is_file() {
-                let file_path_str = new_path.to_str().unwrap().to_string();
-                let window_index = if let Some(index) = self.windows.iter().position(|w| w.filename() == Some(&file_path_str)) {
-                    index
-                } else {
-                    let new_window = Window::new(Some(file_path_str));
-                    self.windows.push(new_window);
-                    self.windows.len() - 1
-                };
+    // 統合されたディレクトリアイテム処理
+    fn handle_directory_item(&mut self, selected_item: String, split_type: Option<SplitType>) {
+        let item_name = selected_item.trim_end_matches('/');
 
-                let active_pane_id = self.pane_manager.get_active_pane_id();
-                if let Some(new_pane_id) = self.pane_manager.hsplit(active_pane_id, window_index) {
-                    self.pane_manager.set_active_pane(new_pane_id);
-                }
-                self.show_directory = false;
-                self.focused_panel = FocusedPanel::Editor;
+        if item_name == ".." {
+            if let Some(parent) = self.current_path.parent() {
+                self.current_path = parent.to_path_buf();
+                self.update_directory_files();
             }
+            return;
+        }
+
+        let new_path = self.current_path.join(item_name);
+
+        if new_path.is_dir() {
+            self.current_path = new_path;
+            self.update_directory_files();
+        } else if new_path.is_file() {
+            let file_path_str = new_path.to_str().unwrap().to_string();
+            let window_index = self.get_or_create_window(file_path_str);
+            
+            match split_type {
+                Some(SplitType::Vertical) => {
+                    let active_pane_id = self.pane_manager.get_active_pane_id();
+                    if let Some(new_pane_id) = self.pane_manager.vsplit(active_pane_id, window_index) {
+                        self.pane_manager.set_active_pane(new_pane_id);
+                    }
+                }
+                Some(SplitType::Horizontal) => {
+                    let active_pane_id = self.pane_manager.get_active_pane_id();
+                    if let Some(new_pane_id) = self.pane_manager.hsplit(active_pane_id, window_index) {
+                        self.pane_manager.set_active_pane(new_pane_id);
+                    }
+                }
+                None => {
+                    let active_pane_id = self.pane_manager.get_active_pane_id();
+                    if let Some(pane) = self.pane_manager.get_pane_mut(active_pane_id) {
+                        pane.window_index = window_index;
+                    }
+                }
+            }
+            
+            self.show_directory = false;
+            self.focused_panel = FocusedPanel::Editor;
+        }
+    }
+
+    // ウィンドウの取得または作成を統合
+    fn get_or_create_window(&mut self, file_path_str: String) -> usize {
+        if let Some(index) = self.windows.iter().position(|w| w.filename() == Some(&file_path_str)) {
+            index
+        } else {
+            let new_window = Window::new(Some(file_path_str));
+            self.windows.push(new_window);
+            self.windows.len() - 1
         }
     }
 
@@ -287,70 +275,20 @@ impl App {
         };
 
         let file_path_str = file_path.to_string_lossy().to_string();
+        let window_index = self.get_or_create_window(file_path_str.clone());
         
-        if let Some(window_index) = self.windows.iter().position(|w| {
-            w.filename() == Some(&file_path_str)
-        }) {
-            let active_pane_id = self.pane_manager.get_active_pane_id();
-            if let Some(pane) = self.pane_manager.get_pane_mut(active_pane_id) {
-                pane.window_index = window_index;
-            }
-            self.status_message = format!("Switched to \"{}\"", filename);
-        } else {
-            let new_window = Window::new(Some(file_path_str.clone()));
-            
-            if file_path.exists() {
-                self.windows.push(new_window);
-                let window_index = self.windows.len() - 1;
-                
-                let active_pane_id = self.pane_manager.get_active_pane_id();
-                if let Some(pane) = self.pane_manager.get_pane_mut(active_pane_id) {
-                    pane.window_index = window_index;
-                }
-                self.status_message = format!("\"{}\" opened", filename);
-            } else {
-                self.windows.push(new_window);
-                let window_index = self.windows.len() - 1;
-                
-                let active_pane_id = self.pane_manager.get_active_pane_id();
-                if let Some(pane) = self.pane_manager.get_pane_mut(active_pane_id) {
-                    pane.window_index = window_index;
-                }
-                self.status_message = format!("\"{}\" [New File]", filename);
-            }
+        let active_pane_id = self.pane_manager.get_active_pane_id();
+        if let Some(pane) = self.pane_manager.get_pane_mut(active_pane_id) {
+            pane.window_index = window_index;
         }
+        
+        self.status_message = if file_path.exists() {
+            format!("\"{}\" opened", filename)
+        } else {
+            format!("\"{}\" [New File]", filename)
+        };
     }
 
-    pub fn update_completions(&mut self) {
-        let (start, end) = self.get_current_word_bounds();
-        let window = self.current_window();
-        let current_line = &window.buffer()[window.cursor_y()];
-        let current_word = &current_line[start..end];
-
-        if current_word.is_empty() {
-            self.show_completion = false;
-            return;
-        }
-
-        let mut completions = std::collections::HashSet::new();
-        for line in window.buffer() {
-            for word in line.split(|c: char| !c.is_alphanumeric() && c != '_') {
-                if word.starts_with(current_word) && word != current_word {
-                    completions.insert(word.to_string());
-                }
-            }
-        }
-
-        self.completions = completions.into_iter().collect();
-        self.completions.sort();
-
-        if self.completions.is_empty() {
-            self.show_completion = false;
-        } else {
-            self.show_completion = true;
-            self.selected_completion = 0;
-        }
-    }
 
     pub fn apply_completion(&mut self) {
         if self.show_completion && !self.completions.is_empty() {
@@ -381,6 +319,7 @@ impl App {
         (start, end)
     }
 
+    // スクロール処理を統合
     pub fn move_directory_selection_up(&mut self, visible_height: usize) {
         if self.selected_directory_index > 0 {
             self.selected_directory_index -= 1;
@@ -389,31 +328,16 @@ impl App {
     }
 
     pub fn move_directory_selection_down(&mut self, visible_height: usize) {
-        if self.directory_files.is_empty() {
-            return;
-        }
-        let last_index = self.directory_files.len().saturating_sub(1);
-        let relative = self.selected_directory_index.saturating_sub(self.directory_scroll_offset);
-        if self.selected_directory_index < last_index {
-            if relative < visible_height.saturating_sub(1) {
-                self.selected_directory_index += 1;
-            } else if self.directory_scroll_offset + visible_height <= last_index {
-                self.directory_scroll_offset += 1;
-            }
+        if !self.directory_files.is_empty() && self.selected_directory_index < self.directory_files.len() - 1 {
+            self.selected_directory_index += 1;
+            self.update_directory_scroll(visible_height);
         }
     }
 
     pub fn update_directory_scroll(&mut self, visible_height: usize) {
-        if self.directory_files.len() <= visible_height {
-            self.directory_scroll_offset = 0;
-            return;
-        }
-        if self.selected_directory_index < self.directory_scroll_offset {
-            self.directory_scroll_offset = self.selected_directory_index;
-        }
-        else if self.selected_directory_index >= self.directory_scroll_offset + visible_height {
-            self.directory_scroll_offset = self.selected_directory_index.saturating_sub(visible_height.saturating_sub(1));
-        }
+        let selected_index = self.selected_directory_index;
+        let total_items = self.directory_files.len();
+        Self::update_scroll(&mut self.directory_scroll_offset, selected_index, total_items, visible_height);
     }
 
     pub fn move_right_panel_selection_up(&mut self, visible_height: usize) {
@@ -424,26 +348,30 @@ impl App {
     }
 
     pub fn move_right_panel_selection_down(&mut self, visible_height: usize) {
-        if self.right_panel_items.is_empty() {
-            return;
-        }
-        let last_index = self.right_panel_items.len().saturating_sub(1);
-        if self.selected_right_panel_index < last_index {
+        if !self.right_panel_items.is_empty() && self.selected_right_panel_index < self.right_panel_items.len() - 1 {
             self.selected_right_panel_index += 1;
             self.update_right_panel_scroll(visible_height);
         }
     }
 
     pub fn update_right_panel_scroll(&mut self, visible_height: usize) {
-        if self.right_panel_items.len() <= visible_height {
-            self.right_panel_scroll_offset = 0;
+        let selected_index = self.selected_right_panel_index;
+        let total_items = self.right_panel_items.len();
+        Self::update_scroll(&mut self.right_panel_scroll_offset, selected_index, total_items, visible_height);
+    }
+
+    // 共通のスクロール更新ロジック
+    fn update_scroll(scroll_offset: &mut usize, selected_index: usize, 
+                     total_items: usize, visible_height: usize) {
+        if total_items <= visible_height {
+            *scroll_offset = 0;
             return;
         }
-        if self.selected_right_panel_index < self.right_panel_scroll_offset {
-            self.right_panel_scroll_offset = self.selected_right_panel_index;
-        }
-        else if self.selected_right_panel_index >= self.right_panel_scroll_offset + visible_height {
-            self.right_panel_scroll_offset = self.selected_right_panel_index.saturating_sub(visible_height.saturating_sub(1));
+        
+        if selected_index < *scroll_offset {
+            *scroll_offset = selected_index;
+        } else if selected_index >= *scroll_offset + visible_height {
+            *scroll_offset = selected_index.saturating_sub(visible_height.saturating_sub(1));
         }
     }
 
@@ -459,4 +387,10 @@ impl App {
             }
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum SplitType {
+    Vertical,
+    Horizontal,
 }

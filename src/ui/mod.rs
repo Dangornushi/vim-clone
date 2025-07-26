@@ -175,11 +175,15 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     let show_line_numbers = app.config.editor.show_line_numbers;
                     let horizontal_margin = app.config.ui.editor_margins.horizontal;
                     let current_window = app.current_window_mut();
-                    let cursor_width = current_window.buffer()[current_window.cursor_y()]
-                        .graphemes(true)
-                        .take(current_window.cursor_x())
-                        .map(|g| g.width())
-                        .sum::<usize>();
+                    let cursor_width = if current_window.buffer().is_empty() || current_window.cursor_y() >= current_window.buffer().len() {
+                        0
+                    } else {
+                        current_window.buffer()[current_window.cursor_y()]
+                            .graphemes(true)
+                            .take(current_window.cursor_x())
+                            .map(|g| g.width())
+                            .sum::<usize>()
+                    };
                     let line_number_width = if show_line_numbers { editor_constants::DEFAULT_LINE_NUMBER_WIDTH } else { 0 };
                     let separator_width = if show_line_numbers { editor_constants::LINE_NUMBER_SEPARATOR_WIDTH } else { 0 };
                     let text_start_x_offset = horizontal_margin as usize + line_number_width + separator_width;

@@ -6,6 +6,40 @@ use unicode_segmentation::UnicodeSegmentation;
     
 pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers: KeyModifiers) {
         let _show_line_numbers = app.config.editor.show_line_numbers;
+    
+    // Shift+H と Shift+L の処理
+    if key_modifiers == KeyModifiers::SHIFT {
+        match key_code {
+            KeyCode::Char('H') => {
+                if app.focused_panel == FocusedPanel::Editor {
+                    let current_window = app.current_window_mut();
+                    current_window.move_to_screen_top();
+                    app.status_message = "Moved to screen top".to_string();
+                }
+                return;
+            }
+            KeyCode::Char('L') => {
+                if app.focused_panel == FocusedPanel::Editor {
+                    // 現在のペインの表示可能な高さを取得
+                    let visible_height = if let Some(active_pane) = app.pane_manager.get_active_pane() {
+                        if let Some(rect) = active_pane.rect {
+                            rect.height.saturating_sub(2) as usize // ボーダーを除く
+                        } else {
+                            20 // デフォルト値
+                        }
+                    } else {
+                        20 // デフォルト値
+                    };
+                    
+                    let current_window = app.current_window_mut();
+                    current_window.move_to_screen_bottom(visible_height);
+                    app.status_message = "Moved to screen bottom".to_string();
+                }
+                return;
+            }
+            _ => {}
+        }
+    }
     if let KeyCode::Char(c) = key_code {
         if let Some(action) = app.config.key_bindings.normal.get(&c.to_string()) {
             let visible_height = if app.show_directory && app.config.ui.directory_pane_floating {
@@ -39,7 +73,8 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                         let current_window = app.current_window_mut();
                         let len = current_window.buffer().len();
                         let cy = *current_window.cursor_y_mut();
-                        if cy < len - 1 {
+
+                        if len > 0 && cy < len - 1 {
                             *current_window.cursor_y_mut() += 1;
                             let cy2 = *current_window.cursor_y_mut();
                             let current_line_len_graphemes = current_window.buffer()[cy2].graphemes(true).count();

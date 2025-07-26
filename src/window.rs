@@ -347,4 +347,27 @@ impl Window {
         self.cursor_y = new_line_y;
         self.cursor_x = 0;
     }
+    /// 画面内の一番上の行にカーソルを移動
+    pub fn move_to_screen_top(&mut self) {
+        self.cursor_y = self.scroll_y;
+        if self.cursor_y < self.buffer.len() {
+            let line_len = self.buffer[self.cursor_y].len();
+            if self.cursor_x > line_len {
+                self.cursor_x = line_len;
+            }
+        }
+    }
+
+    /// 画面内の一番下の行にカーソルを移動
+    pub fn move_to_screen_bottom(&mut self, visible_height: usize) {
+        let last_visible_line = (self.scroll_y + visible_height.saturating_sub(1))
+            .min(self.buffer.len().saturating_sub(1));
+        self.cursor_y = last_visible_line;
+        if self.cursor_y < self.buffer.len() {
+            let line_len = self.buffer[self.cursor_y].len();
+            if self.cursor_x > line_len {
+                self.cursor_x = line_len;
+            }
+        }
+    }
 }

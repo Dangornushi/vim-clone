@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Margin, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 

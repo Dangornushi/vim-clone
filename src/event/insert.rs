@@ -31,7 +31,7 @@ pub fn handle_insert_mode_event(app: &mut App, key_code: KeyCode) {
     }
 
     let indent_width = app.config.editor.indent_width;
-    let tab_size = app.config.editor.tab_size;
+    let _tab_size = app.config.editor.tab_size;
     let _show_line_numbers = app.config.editor.show_line_numbers;
     let current_window = app.current_window_mut();
     match key_code {
@@ -77,6 +77,9 @@ pub fn handle_insert_mode_event(app: &mut App, key_code: KeyCode) {
                 // 通常の文字挿入
                 let y = current_window.cursor_y();
                 let x = current_window.cursor_x();
+                if current_window.buffer().len() <= y{
+                    current_window.buffer_mut().resize(y + 1, String::new());
+                };
                 let line = &mut current_window.buffer_mut()[y];
                 let byte_index = line.grapheme_indices(true).nth(x).map(|(i, _)| i).unwrap_or(line.len());
                 line.insert(byte_index, c);
@@ -104,6 +107,40 @@ pub fn handle_insert_mode_event(app: &mut App, key_code: KeyCode) {
                 *current_window.cursor_x_mut() = prev_line_len;
                 current_window.on_line_deleted(y);
             }
+        }
+        KeyCode::Enter => {
+            // Enterキーでの改行処理
+            let y = current_window.cursor_y();
+            let x = current_window.cursor_x();
+            let current_line_ref = &mut current_window.buffer_mut()[y];
+            let byte_index = current_line_ref
+                .grapheme_indices(true)
+                .nth(x)
+                .map(|(i, _)| i)
+                .unwrap_or(current_line_ref.len());
+            let new_line = current_line_ref.split_off(byte_index);
+
+            // 前の行の先頭のスペースを取得
+            let mut indent = current_line_ref.chars()
+                .take_while(|&ch| ch == ' ')
+                .collect::<String>();
+
+            // 前の行の末尾が開き括弧の場合、インデントを深くする
+            if current_line_ref.ends_with('{') || current_line_ref.ends_with('[') || current_line_ref.ends_with('(') {
+                let indent_spaces = " ".repeat(indent_width);
+                indent.push_str(&indent_spaces);
+            } else if new_line.starts_with('}') || new_line.starts_with(')') || new_line.starts_with(']') {
+                // 新しい行の先頭が閉じ括弧の場合、インデントを一段浅くする
+                if indent.len() >= indent_width {
+                    indent.truncate(indent.len() - indent_width);
+                }
+            }
+
+            let indented_new_line = format!("{}{}", indent, new_line);
+            current_window.buffer_mut().insert(y + 1, indented_new_line);
+            *current_window.cursor_y_mut() += 1;
+            *current_window.cursor_x_mut() = indent.len();
+            current_window.on_line_inserted(current_window.cursor_y());
         }
         KeyCode::Esc => {
             current_window.end_insert_mode();
