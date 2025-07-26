@@ -187,6 +187,7 @@ impl App {
                     pane.window_index = window_index;
                 }
                 self.show_directory = false;
+                self.focused_panel = FocusedPanel::Editor;
             }
         }
     }
@@ -211,6 +212,7 @@ impl App {
                     self.pane_manager.set_active_pane(new_pane_id);
                 }
                 self.show_directory = false;
+                self.focused_panel = FocusedPanel::Editor;
             }
         }
     }
@@ -235,6 +237,7 @@ impl App {
                     self.pane_manager.set_active_pane(new_pane_id);
                 }
                 self.show_directory = false;
+                self.focused_panel = FocusedPanel::Editor;
             }
         }
     }

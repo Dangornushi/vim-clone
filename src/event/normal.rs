@@ -10,7 +10,11 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
         if let Some(action) = app.config.key_bindings.normal.get(&c.to_string()) {
             let visible_height = if app.show_directory && app.config.ui.directory_pane_floating {
                 20
-            } else { 1 };
+            } else if app.show_directory {
+                15  // 非フローティングモードでも適切な高さを設定
+            } else { 
+                1 
+            };
             match action.as_str() {
                 "move_left" => {
                     if key_modifiers == KeyModifiers::CONTROL {
@@ -28,6 +32,7 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                         app.pane_manager.move_to_down_pane();
                     } else if app.show_directory && app.focused_panel == FocusedPanel::Directory {
                         app.move_directory_selection_down(visible_height);
+                        app.status_message = format!("DIR DOWN: dir={}, focus={:?}", app.show_directory, app.focused_panel);
                     } else if app.show_right_panel && app.focused_panel == FocusedPanel::RightPanel {
                         app.move_right_panel_selection_down(visible_height);
                     } else {
@@ -42,6 +47,7 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                             *current_window.cursor_x_mut() = cx.min(current_line_len_graphemes);
                             // スクロール処理を即座に実行
                         }
+                        app.status_message = format!("EDITOR DOWN: dir={}, right={}, focus={:?}", app.show_directory, app.show_right_panel, app.focused_panel);
                     }
                 }
                 "move_up" => {
@@ -49,6 +55,7 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                         app.pane_manager.move_to_up_pane();
                     } else if app.show_directory && app.focused_panel == FocusedPanel::Directory {
                         app.move_directory_selection_up(visible_height);
+                        app.status_message = format!("DIR UP: dir={}, focus={:?}", app.show_directory, app.focused_panel);
                     } else if app.show_right_panel && app.focused_panel == FocusedPanel::RightPanel {
                         app.move_right_panel_selection_up(visible_height);
                     } else {
@@ -62,6 +69,7 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                             *current_window.cursor_x_mut() = cx.min(current_line_len_graphemes);
                             // スクロール処理を即座に実行
                         }
+                        app.status_message = format!("EDITOR UP: dir={}, right={}, focus={:?}", app.show_directory, app.show_right_panel, app.focused_panel);
                     }
                 }
                 "move_right" => {
@@ -221,26 +229,36 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
         } else {
             app.status_message = "Nothing to redo".to_string();
         }
+    } else if key_code == KeyCode::Char('r') && key_modifiers == KeyModifiers::CONTROL {
+        // Ctrl+R for redo
+        let current_window = app.current_window_mut();
+        if current_window.redo() {
+            app.status_message = "Redone".to_string();
+        } else {
+            app.status_message = "Nothing to redo".to_string();
+        }
     } else if key_code == KeyCode::Char('b') && key_modifiers == KeyModifiers::CONTROL {
-        
-        
         // Ctrl+B: Toggle directory and right panel visibility
+        app.status_message = format!("CTRL+B PRESSED: dir={}, right={}, focus={:?}", app.show_directory, app.show_right_panel, app.focused_panel);
         if app.show_directory {
+            // ディレクトリパネルが表示中 → 右パネルに切り替え
             app.show_directory = false;
             app.show_right_panel = true;
-            
             app.focused_panel = FocusedPanel::RightPanel;
-            app.status_message = "Switched to Right Panel".to_string();
+            app.status_message = format!("RIGHT PANEL: dir={}, right={}, focus={:?}", app.show_directory, app.show_right_panel, app.focused_panel);
         } else if app.show_right_panel {
+            // 右パネルが表示中 → 両方非表示
             app.show_right_panel = false;
-            app.show_directory = false; // 両方非表示
+            app.show_directory = false;
             app.focused_panel = FocusedPanel::Editor;
-            app.status_message = "Panels hidden".to_string();
+            app.status_message = format!("HIDDEN: dir={}, right={}, focus={:?}", app.show_directory, app.show_right_panel, app.focused_panel);
         } else {
+            // 両方非表示 → ディレクトリパネルを表示
             app.show_directory = true;
             app.show_right_panel = false;
             app.focused_panel = FocusedPanel::Directory;
-            app.status_message = "Switched to Directory Panel".to_string();
+            // フォーカス設定を確実にするため、明示的に再設定
+            app.status_message = format!("DIR PANEL FIXED: dir={}, right={}, focus={:?}", app.show_directory, app.show_right_panel, app.focused_panel);
         }
     }
 }

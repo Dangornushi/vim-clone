@@ -100,6 +100,7 @@ impl Theme {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KeyBindings {
     pub normal: HashMap<String, String>,
+    pub ctrl: HashMap<String, String>,
 }
 
 impl Default for KeyBindings {
@@ -116,7 +117,14 @@ impl Default for KeyBindings {
         normal.insert("x".to_string(), "delete_char".to_string());
         normal.insert("a".to_string(), "append".to_string());
         normal.insert("u".to_string(), "undo".to_string());
-        Self { normal }
+        normal.insert("o".to_string(), "open_new_line".to_string());
+        
+        let mut ctrl = HashMap::new();
+        ctrl.insert("f".to_string(), "toggle_directory".to_string());
+        ctrl.insert("b".to_string(), "toggle_right_panel".to_string());
+        ctrl.insert("r".to_string(), "redo".to_string());
+        
+        Self { normal, ctrl }
     }
 }
 

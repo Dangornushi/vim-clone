@@ -33,6 +33,11 @@
       "a": "append",
       "u": "undo",
       "o": "open_new_line"
+    },
+    "ctrl": {
+      "f": "toggle_directory",
+      "b": "toggle_right_panel",
+      "r": "redo"
     }
   }
 }
