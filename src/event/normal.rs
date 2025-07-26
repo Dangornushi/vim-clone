@@ -1,14 +1,16 @@
-use crate::app::{App, Mode};
+use crate::app::{App, FocusedPanel};
+use crate::app::Mode;
 use crossterm::event::{KeyCode, KeyModifiers};
 use unicode_segmentation::UnicodeSegmentation;
 
+    
 pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers: KeyModifiers) {
-    let _show_line_numbers = app.config.editor.show_line_numbers;
+        let _show_line_numbers = app.config.editor.show_line_numbers;
     if let KeyCode::Char(c) = key_code {
         if let Some(action) = app.config.key_bindings.normal.get(&c.to_string()) {
             let visible_height = if app.show_directory && app.config.ui.directory_pane_floating {
                 20
-            } else { 0 };
+            } else { 1 };
             match action.as_str() {
                 "move_left" => {
                     if key_modifiers == KeyModifiers::CONTROL {
@@ -24,8 +26,10 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                 "move_down" => {
                     if key_modifiers == KeyModifiers::CONTROL {
                         app.pane_manager.move_to_down_pane();
-                    } else if app.show_directory {
+                    } else if app.show_directory && app.focused_panel == FocusedPanel::Directory {
                         app.move_directory_selection_down(visible_height);
+                    } else if app.show_right_panel && app.focused_panel == FocusedPanel::RightPanel {
+                        app.move_right_panel_selection_down(visible_height);
                     } else {
                         let current_window = app.current_window_mut();
                         let len = current_window.buffer().len();
@@ -43,8 +47,10 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                 "move_up" => {
                     if key_modifiers == KeyModifiers::CONTROL {
                         app.pane_manager.move_to_up_pane();
-                    } else if app.show_directory {
+                    } else if app.show_directory && app.focused_panel == FocusedPanel::Directory {
                         app.move_directory_selection_up(visible_height);
+                    } else if app.show_right_panel && app.focused_panel == FocusedPanel::RightPanel {
+                        app.move_right_panel_selection_up(visible_height);
                     } else {
                         let current_window = app.current_window_mut();
                         let cy = *current_window.cursor_y_mut();
@@ -110,9 +116,13 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
                     }
                 }
                 "mode_insert" => {
-                    let current_window = app.current_window_mut();
-                    current_window.start_insert_mode(); // 挿入モード開始時に状態を保存
-                    app.mode = Mode::Insert;
+                    if app.show_right_panel && app.focused_panel == FocusedPanel::RightPanel {
+                        app.mode = Mode::RightPanelInput;
+                    } else {
+                        let current_window = app.current_window_mut();
+                        current_window.start_insert_mode(); // 挿入モード開始時に状態を保存
+                        app.mode = Mode::Insert;
+                    }
                 }
                 "append" => {
                     let current_window_ref = app.current_window_mut();
@@ -182,8 +192,26 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
             }
         }
     } else if let KeyCode::Enter = key_code {
-        if app.show_directory {
+        if app.show_directory && app.focused_panel == FocusedPanel::Directory {
             app.open_selected_item();
+        } else if app.show_right_panel && app.focused_panel == FocusedPanel::RightPanel {
+            // 右側パネルの入力欄からアイテムを追加
+            if !app.right_panel_input.is_empty() {
+                app.add_right_panel_item(app.right_panel_input.clone());
+                app.right_panel_input.clear();
+                app.status_message = "Item added to right panel".to_string();
+            }
+        }
+    } else if let KeyCode::Delete = key_code {
+        if app.show_right_panel && app.focused_panel == FocusedPanel::RightPanel {
+            // 右側パネルの選択されたアイテムを削除
+            app.remove_selected_right_panel_item();
+            app.status_message = "Item removed from right panel".to_string();
+        }
+    } else if let KeyCode::Backspace = key_code {
+        if app.show_right_panel {
+            // 右側パネルの入力欄から文字を削除
+            app.right_panel_input.pop();
         }
     } else if key_code == KeyCode::Char('r') && key_modifiers == KeyModifiers::CONTROL {
         // Ctrl+R for redo
@@ -192,6 +220,27 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
             app.status_message = "Redone".to_string();
         } else {
             app.status_message = "Nothing to redo".to_string();
+        }
+    } else if key_code == KeyCode::Char('b') && key_modifiers == KeyModifiers::CONTROL {
+        
+        
+        // Ctrl+B: Toggle directory and right panel visibility
+        if app.show_directory {
+            app.show_directory = false;
+            app.show_right_panel = true;
+            
+            app.focused_panel = FocusedPanel::RightPanel;
+            app.status_message = "Switched to Right Panel".to_string();
+        } else if app.show_right_panel {
+            app.show_right_panel = false;
+            app.show_directory = false; // 両方非表示
+            app.focused_panel = FocusedPanel::Editor;
+            app.status_message = "Panels hidden".to_string();
+        } else {
+            app.show_directory = true;
+            app.show_right_panel = false;
+            app.focused_panel = FocusedPanel::Directory;
+            app.status_message = "Switched to Directory Panel".to_string();
         }
     }
 }

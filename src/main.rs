@@ -5,12 +5,15 @@ mod pane;
 mod config;
 mod syntax;
 mod constants;
+mod window;
+mod app_config;
 use crate::app::App;
 use crossterm::{
     event::{
         DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
         PushKeyboardEnhancementFlags,
     },
+    
     execute,
     terminal::{
         disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, Clear,
@@ -86,6 +89,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     execute!(terminal.backend_mut(), Clear(ClearType::All))?;
 
     // create app and run it
+    eprintln!("Application started.");
     let app = App::new(filename);
     let res = event::run_app(&mut terminal, app);
 

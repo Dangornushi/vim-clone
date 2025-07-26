@@ -97,7 +97,7 @@ impl Theme {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KeyBindings {
     pub normal: HashMap<String, String>,
 }
@@ -120,7 +120,7 @@ impl Default for KeyBindings {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EditorConfig {
     pub indent_width: usize,
     pub show_line_numbers: bool,
@@ -131,13 +131,13 @@ pub struct EditorConfig {
     pub cursor_style: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EditorMargins {
     pub vertical: u16,
     pub horizontal: u16,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UiConfig {
     pub theme: String,
     pub directory_pane_width: u16,
@@ -147,7 +147,7 @@ pub struct UiConfig {
     pub editor_margins: EditorMargins,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[derive(Default)]
 pub struct Config {
     pub editor: EditorConfig,

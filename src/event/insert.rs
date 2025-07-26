@@ -1,4 +1,5 @@
-use crate::app::{App, Mode};
+use crate::app::App;
+use crate::app::Mode;
 use crossterm::event::KeyCode;
 use unicode_segmentation::UnicodeSegmentation;
 
