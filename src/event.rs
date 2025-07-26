@@ -35,6 +35,13 @@ pub fn run_app<B: Backend + std::io::Write>(terminal: &mut Terminal<B>, mut app:
             if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
                 if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('f') {
                     app.show_directory = !app.show_directory;
+                    if app.show_directory {
+                        app.focused_panel = crate::app::FocusedPanel::Directory;
+                        app.status_message = format!("DIR OPENED: focus={:?}", app.focused_panel);
+                    } else {
+                        app.focused_panel = crate::app::FocusedPanel::Editor;
+                        app.status_message = format!("DIR CLOSED: focus={:?}", app.focused_panel);
+                    }
                     continue;
                 }
                 
