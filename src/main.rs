@@ -1,3 +1,4 @@
+mod utils;
 mod app;
 mod event;
 mod ui;
@@ -89,9 +90,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     execute!(terminal.backend_mut(), Clear(ClearType::All))?;
 
     // create app and run it
-    eprintln!("Application started.");
     let app = App::new(filename);
-    let res = event::run_app(&mut terminal, app);
+    let rt = tokio::runtime::Runtime::new()?;
+    let res = rt.block_on(event::run_app(&mut terminal, app));
 
     // restore terminal
     disable_raw_mode()?;

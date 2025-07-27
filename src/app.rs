@@ -1,3 +1,7 @@
+use tokio::sync::mpsc::{Sender, Receiver};
+
+// 既存のApp構造体定義の末尾にai_response_sender/receiverのみ追加
+// 他のApp定義はそのまま残すこと
 use std::{
     env,
     fs,
@@ -36,6 +40,11 @@ pub struct App {
     pub selected_right_panel_index: usize,
     pub right_panel_scroll_offset: usize,
     pub focused_panel: FocusedPanel,
+    // mpscチャネル追加
+    pub ai_response_sender: Option<Sender<String>>,
+    pub ai_response_receiver: Option<Receiver<String>>,
+    pub ai_status: String, // AI状態表示用
+    pub right_panel_input_cursor: usize,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -57,6 +66,8 @@ impl App {
             env::current_dir().unwrap()
         };
 
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+
         let mut app = Self {
             windows: vec![initial_window],
             pane_manager: PaneManager::new(0),
@@ -75,20 +86,16 @@ impl App {
             selected_completion: 0,
             show_right_panel: false,
             right_panel_input: String::new(),
-            right_panel_items: vec![
-                "Item 1".to_string(),
-                "Item 2".to_string(),
-                "Item 3".to_string(),
-                "Example Task".to_string(),
-                "Another Task".to_string(),
-                "Development Notes".to_string(),
-                "Bug Reports".to_string(),
-                "Feature Requests".to_string(),
-            ],
+            right_panel_items: Vec::new(),
             selected_right_panel_index: 0,
             right_panel_scroll_offset: 0,
             focused_panel: FocusedPanel::Directory,
+            ai_response_sender: Some(tx),
+            ai_response_receiver: Some(rx),
+            ai_status: "LLM接続失敗".to_string(), // テスト用状態
+            right_panel_input_cursor: 0,
         };
+        app.right_panel_input_cursor = 0;
         app.update_directory_files();
         app
     }

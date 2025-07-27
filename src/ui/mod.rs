@@ -3,6 +3,7 @@ pub mod completion;
 pub mod panels;
 
 use crate::app::App;
+use crate::utils::get_display_cursor_x;
 use crate::window::Mode;
 use crate::constants::editor as editor_constants;
 use ratatui::{
@@ -16,7 +17,7 @@ use unicode_width::UnicodeWidthStr;
 
 pub use editor::draw_editor_pane;
 pub use completion::draw_completion_popup;
-pub use panels::{draw_directory_panel, draw_right_panel};
+pub use panels::{draw_directory_panel, draw_chat_panel, ChatPanelData};
 
 pub fn ui(f: &mut Frame, app: &mut App) {
     let app_mode = app.mode;
@@ -83,7 +84,22 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
     // 右側パネルの描画
     if app.show_right_panel && !is_floating {
-        draw_right_panel(f, app, &main_chunks);
+        use crate::ui::panels::ChatPanelData;
+        let mut chat_panel_data = ChatPanelData {
+            items: app.right_panel_items.clone(),
+            selected_index: app.selected_right_panel_index,
+            scroll_offset: app.right_panel_scroll_offset,
+            input: app.right_panel_input.clone(),
+            focused: app.focused_panel == crate::app::FocusedPanel::RightPanel,
+            ai_status: app.ai_status.clone(), // AI状態をAppから取得
+            input_cursor: app.right_panel_input_cursor,
+        };
+        draw_chat_panel(
+            f,
+            &main_chunks,
+            app.show_directory,
+            &mut chat_panel_data,
+        );
     }
 
     // ステータスバーの描画
@@ -135,25 +151,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     .split(right_panel_area);
                 
                 let input_area = right_panel_chunks[1].inner(&ratatui::layout::Margin { vertical: 1, horizontal: 1 });
+                let cursor_x = get_display_cursor_x(&app.right_panel_input, app.right_panel_input_cursor);
                 f.set_cursor(
-                    input_area.x + app.right_panel_input.len() as u16,
+                    input_area.x + cursor_x,
                     input_area.y,
                 );
-            } else {
-                // 右側パネルのリスト部分にカーソルを表示
-                let right_panel_index = if app.show_directory { 2 } else { 1 };
-                let right_panel_area = main_chunks[right_panel_index];
-                let right_panel_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Min(0),
-                        Constraint::Length(3),
-                    ])
-                    .split(right_panel_area);
-                
-                let list_area = right_panel_chunks[0].inner(&ratatui::layout::Margin { vertical: 1, horizontal: 1 });
-                let cursor_y = (app.selected_right_panel_index - app.right_panel_scroll_offset).min(list_area.height.saturating_sub(1) as usize);
-                f.set_cursor(list_area.x, list_area.y + cursor_y as u16);
             }
         }
         FocusedPanel::Directory if app.show_directory => {

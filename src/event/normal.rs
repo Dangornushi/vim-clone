@@ -296,4 +296,9 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
             app.status_message = format!("DIR PANEL FIXED: dir={}, right={}, focus={:?}", app.show_directory, app.show_right_panel, app.focused_panel);
         }
     }
+    // F5キーでAI状態を変更（リアルタイムテスト用）
+    if key_code == KeyCode::F(5) {
+        app.ai_status = "LLM再接続中".to_string();
+        app.status_message = "AI状態を「LLM再接続中」に変更".to_string();
+    }
 }

@@ -19,6 +19,10 @@
       "horizontal": 1
     }
   },
+  "agent": {
+    "name": "gemini-2.5-flash",
+    "key": "AIzaSyAsBv3rbPw959-yHGeTL_DbhYtM4xAapTw"
+  },
   "key_bindings": {
     "normal": {
       "k": "move_up",

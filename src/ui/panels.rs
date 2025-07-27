@@ -117,12 +117,27 @@ pub fn draw_directory_panel(f: &mut Frame, app: &mut App, main_chunks: &[Rect], 
 }
     
 
-pub fn draw_right_panel(f: &mut Frame, app: &mut App, main_chunks: &[Rect]) {
-        let right_panel_index = if app.show_directory { 2 } else { 1 };
+pub struct ChatPanelData {
+    pub items: Vec<String>,
+    pub selected_index: usize,
+    pub scroll_offset: usize,
+    pub input: String,
+    pub focused: bool,
+    pub ai_status: String, // AI状態表示用
+    pub input_cursor: usize,
+}
+
+pub fn draw_chat_panel(
+    f: &mut Frame,
+    main_chunks: &[Rect],
+    show_directory: bool,
+    data: &mut ChatPanelData,
+) {
+    let right_panel_index = if show_directory { 2 } else { 1 };
     let right_panel_area = main_chunks[right_panel_index];
-    
+
     // 右側パネルを上下に分割（上: リスト、下: 入力欄）
-        let right_panel_chunks = Layout::default()
+    let right_panel_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(0),
@@ -130,47 +145,89 @@ pub fn draw_right_panel(f: &mut Frame, app: &mut App, main_chunks: &[Rect]) {
         ])
         .split(right_panel_area);
 
+    // AI状態表示（チャットリストの上部に表示）
+    let status_area = right_panel_chunks[0];
+    let status_paragraph = Paragraph::new(format!("AI状態: {}", data.ai_status))
+        .style(Style::default().fg(ratatui::style::Color::Yellow))
+        .block(Block::default().borders(Borders::NONE));
+    // 高さ1行分だけ上部に描画
+    let status_rect = Rect {
+        x: status_area.x,
+        y: status_area.y,
+        width: status_area.width,
+        height: 1,
+    };
+    f.render_widget(status_paragraph, status_rect);
+
     // 右側パネルのリスト部分
-    let visible_height = right_panel_chunks[0].height.saturating_sub(2) as usize; // ボーダーを除いた高さ
-    app.update_right_panel_scroll(visible_height);
-    
-    let right_panel_list: Vec<Line> = app.right_panel_items
-        .iter()
-        .enumerate()
-        .skip(app.right_panel_scroll_offset)
-        .take(visible_height)
-        .map(|(i, item)| {
-            let actual_index = i + app.right_panel_scroll_offset;
-            if actual_index == app.selected_right_panel_index {
-                Line::from(Span::styled(
-                    item.clone(),
+    let visible_height = right_panel_chunks[0].height.saturating_sub(3) as usize; // 状態表示分高さ減
+    if data.selected_index < data.scroll_offset {
+        data.scroll_offset = data.selected_index;
+    } else if data.selected_index >= data.scroll_offset + visible_height {
+        data.scroll_offset = data.selected_index - visible_height + 1;
+    }
+
+    let panel_width = right_panel_chunks[0].width as usize;
+    let mut right_panel_list: Vec<Line> = Vec::new();
+    for (i, item) in data.items.iter().enumerate().skip(data.scroll_offset).take(visible_height) {
+        let actual_index = i + data.scroll_offset;
+        let is_selected = actual_index == data.selected_index;
+        // unicode-widthで表示幅を計算し、収まりきらない場合のみ分割
+        use unicode_width::UnicodeWidthChar;
+        let mut line = String::new();
+        let mut width = 0;
+        for c in item.chars() {
+            let cw = UnicodeWidthChar::width(c).unwrap_or(1);
+            line.push(c);
+            width += cw;
+            // 句読点のみで改行（スペースは改行しない）
+            if width >= panel_width || c == '。' || c == '、' {
+                let style = if is_selected {
                     Style::default()
                         .bg(ratatui::style::Color::Rgb(100, 100, 100))
                         .fg(ratatui::style::Color::Rgb(255, 255, 255))
-                ))
-            } else {
-                Line::from(Span::styled(
-                    item.clone(),
+                } else {
                     Style::default().fg(ratatui::style::Color::Rgb(200, 200, 200))
-                ))
+                };
+                right_panel_list.push(Line::from(Span::styled(line.clone(), style)));
+                line.clear();
+                width = 0;
             }
-        })
-        .collect();
+        }
+        if !line.is_empty() {
+            let style = if is_selected {
+                Style::default()
+                    .bg(ratatui::style::Color::Rgb(100, 100, 100))
+                    .fg(ratatui::style::Color::Rgb(255, 255, 255))
+            } else {
+                Style::default().fg(ratatui::style::Color::Rgb(200, 200, 200))
+            };
+            right_panel_list.push(Line::from(Span::styled(line, style)));
+        }
+    }
 
-    let right_panel_block = Block::default()
+    let chat_panel_block = Block::default()
         .borders(Borders::ALL)
-        .title(if app.focused_panel == FocusedPanel::RightPanel {
-            "Right Panel [FOCUSED]"
+        .title(if data.focused {
+            "チャット欄 [FOCUSED]"
         } else {
-            "Right Panel"
+            "チャット欄"
         });
-    let right_panel_paragraph = Paragraph::new(right_panel_list).block(right_panel_block);
-    f.render_widget(right_panel_paragraph, right_panel_chunks[0]);
+    let chat_panel_paragraph = Paragraph::new(right_panel_list)
+        .block(chat_panel_block);
+    // 状態表示の下にリストを描画
+    let list_rect = Rect {
+        x: right_panel_chunks[0].x,
+        y: right_panel_chunks[0].y + 1,
+        width: right_panel_chunks[0].width,
+        height: right_panel_chunks[0].height - 1,
+    };
+    f.render_widget(chat_panel_paragraph, list_rect);
 
     // 入力欄
     let input_block = Block::default()
         .borders(Borders::ALL)
-        .title("Input");
-    let input_paragraph = Paragraph::new(app.right_panel_input.clone()).block(input_block);
+        .title("メッセージ入力");
+    let input_paragraph = Paragraph::new(data.input.clone()).block(input_block);
     f.render_widget(input_paragraph, right_panel_chunks[1]);
 }

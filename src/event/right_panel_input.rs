@@ -1,28 +1,49 @@
+// 入力された文字列に「, Hello!」を付加して返す関数
+pub fn chat_greet(input: &str) -> String {
+    format!("{}, Hello!", input)
+}
 use crate::app::App;
 use crate::app::Mode;
 use crossterm::event::KeyCode;
+use vim_editor::utils;
 
-pub fn handle_right_panel_input_mode_event(app: &mut App, key_code: KeyCode) {
+
+// Gemini APIリクエストをバックグラウンドで実行するための関数
+pub fn handle_right_panel_input_mode_event_bg(app: &mut App, key_code: KeyCode) {
     match key_code {
         KeyCode::Enter => {
-            // 入力欄からアイテムを追加
-            if !app.right_panel_input.is_empty() {
-                app.add_right_panel_item(app.right_panel_input.clone());
+            let input = app.right_panel_input.clone();
+            if !input.is_empty() {
+                // 入力内容もチャット欄に表示
+                app.right_panel_items.push(format!("ユーザー: {}", input));
+                app.ai_status = "回答生成中".to_string(); // 送信時に状態変更
+                if let Some(sender) = app.ai_response_sender.as_ref() {
+                    let sender = sender.clone();
+                    tokio::spawn(async move {
+                        // ユーザー入力内容をAPIに渡す
+                        let reply = match utils::send_gemini_greeting_with_input("config.json", &input).await {
+                            Ok(r) => r,
+                            Err(e) => format!("Gemini APIエラー: {}", e),
+                        };
+                        let _ = sender.send(reply).await;
+                    });
+                }
                 app.right_panel_input.clear();
-                app.status_message = "Item added to right panel".to_string();
             }
-            app.mode = Mode::Normal;
+            app.mode = Mode::RightPanelInput;
         }
         KeyCode::Esc => {
-            // 入力モードを終了
             app.mode = Mode::Normal;
+            app.focused_panel = crate::app::FocusedPanel::Editor;
         }
         KeyCode::Backspace => {
-            // 文字を削除
             app.right_panel_input.pop();
         }
+        KeyCode::Char('b') => {
+            // Ctrl + b でEditorにフォーカスを戻す
+            app.focused_panel = crate::app::FocusedPanel::Editor;
+        }
         KeyCode::Char(c) => {
-            // 文字を追加
             app.right_panel_input.push(c);
         }
         _ => {}

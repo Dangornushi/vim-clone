@@ -15,8 +15,26 @@ use ratatui::backend::Backend;
 use ratatui::Terminal;
 use std::io;
 
-pub fn run_app<B: Backend + std::io::Write>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
+pub async fn run_app<B: Backend + std::io::Write>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
     loop {
+        // AIレスポンス受信ポーリング
+        if let Some(receiver) = app.ai_response_receiver.as_mut() {
+            let mut msgs = Vec::new();
+            while let Ok(msg) = receiver.try_recv() {
+                msgs.push(msg);
+            }
+            for msg in msgs {
+                let is_error = msg.starts_with("Gemini APIエラー");
+                app.add_right_panel_item(msg.clone());
+                if is_error {
+                    app.ai_status = msg;
+                } else {
+                    app.ai_status = "完了".to_string();
+                }
+                app.status_message = "Geminiからの返答を追加しました".to_string();
+            }
+        }
+
         match app.mode {
             Mode::Insert => {
                 execute!(terminal.backend_mut(), SetCursorStyle::SteadyBar)?;
@@ -43,7 +61,8 @@ pub fn run_app<B: Backend + std::io::Write>(terminal: &mut Terminal<B>, mut app:
                     Mode::Normal => normal::handle_normal_mode_event(&mut app, key.code, key.modifiers),
                     Mode::Insert => insert::handle_insert_mode_event(&mut app, key.code),
                     Mode::Visual => visual::handle_visual_mode_event(&mut app, key.code),
-                    Mode::RightPanelInput => right_panel_input::handle_right_panel_input_mode_event(&mut app, key.code),
+                    // 非同期AIリクエストはbg関数で処理
+                    Mode::RightPanelInput => right_panel_input::handle_right_panel_input_mode_event_bg(&mut app, key.code),
                     Mode::Command => {
                         if (command::handle_command_mode_event(&mut app, key.code)?).is_some() {
                             return Ok(());
