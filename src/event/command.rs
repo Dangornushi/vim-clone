@@ -115,9 +115,6 @@ pub fn handle_command_mode_event(app: &mut App, key_code: KeyCode) -> io::Result
             }
             app.mode = Mode::Normal;
         }
-        KeyCode::Esc => {
-            app.mode = Mode::Normal;
-        }
         _ => {}
     }
     Ok(None)

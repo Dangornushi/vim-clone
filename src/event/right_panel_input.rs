@@ -1,10 +1,10 @@
 use crate::app::{App, Mode};
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent};
 use unicode_segmentation::UnicodeSegmentation;
 
-pub fn handle_right_panel_input_mode_event_bg(app: &mut App, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Enter => {
+pub fn handle_right_panel_input_mode_event(app: &mut App, key_event: KeyEvent) {
+    match (key_event.code, key_event.modifiers) {
+        (KeyCode::Enter, _) => {
             let input = app.right_panel_input.clone();
             if !input.is_empty() {
                 // 入力内容もチャット欄に表示
@@ -26,11 +26,7 @@ pub fn handle_right_panel_input_mode_event_bg(app: &mut App, key_code: KeyCode) 
             }
             app.mode = Mode::RightPanelInput;
         }
-        KeyCode::Esc => {
-            app.mode = Mode::Normal;
-            app.focused_panel = crate::app::FocusedPanel::Editor;
-        }
-        KeyCode::Backspace => {
+        (KeyCode::Backspace, _) => {
             if app.right_panel_input_cursor > 0 {
                 let graphemes: Vec<&str> = app.right_panel_input.graphemes(true).collect();
                 if app.right_panel_input_cursor <= graphemes.len() {
@@ -49,24 +45,24 @@ pub fn handle_right_panel_input_mode_event_bg(app: &mut App, key_code: KeyCode) 
                 }
             }
         }
-        KeyCode::Left => {
+        (KeyCode::Left, _) => {
             if app.right_panel_input_cursor > 0 {
                 app.right_panel_input_cursor -= 1;
             }
         }
-        KeyCode::Right => {
+        (KeyCode::Right, _) => {
             let grapheme_count = app.right_panel_input.graphemes(true).count();
             if app.right_panel_input_cursor < grapheme_count {
                 app.right_panel_input_cursor += 1;
             }
         }
-        KeyCode::Home => {
+        (KeyCode::Home, _) => {
             app.right_panel_input_cursor = 0;
         }
-        KeyCode::End => {
+        (KeyCode::End, _) => {
             app.right_panel_input_cursor = app.right_panel_input.graphemes(true).count();
         }
-        KeyCode::Char(c) => {
+        (KeyCode::Char(c), _) => {
             let byte_index = app.right_panel_input
                 .grapheme_indices(true)
                 .nth(app.right_panel_input_cursor)

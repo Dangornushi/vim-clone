@@ -59,12 +59,25 @@ pub async fn run_app<B: Backend + std::io::Write>(
                     continue;
                 }
 
+                if key.code == KeyCode::Esc {
+                    // どのモードでもEscでノーマルモードに戻る
+                    // ただし、特殊な状態（ビジュアルモードなど）のクリーンアップが必要な場合がある
+                    if app.mode == Mode::Visual {
+                        *app.current_window_mut().visual_start_mut() = None;
+                    }
+                    if app.mode == Mode::Insert {
+                        app.current_window_mut().end_insert_mode();
+                    }
+                    app.mode = Mode::Normal;
+                    continue;
+                }
+
                 match app.mode {
                     Mode::Normal => normal::handle_normal_mode_event(&mut app, key.code, key.modifiers),
                     Mode::Insert => insert::handle_insert_mode_event(&mut app, key.code),
                     Mode::Visual => visual::handle_visual_mode_event(&mut app, key.code),
                     // 非同期AIリクエストはbg関数で処理
-                    Mode::RightPanelInput => right_panel_input::handle_right_panel_input_mode_event_bg(&mut app, key.code),
+                    Mode::RightPanelInput => right_panel_input::handle_right_panel_input_mode_event(&mut app, key),
                     Mode::Command => {
                         if (command::handle_command_mode_event(&mut app, key.code)?).is_some() {
                             return Ok(());
@@ -94,11 +107,14 @@ fn handle_panel_toggle(app: &mut App, key_code: KeyCode, key_modifiers: KeyModif
         }
         (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
             app.show_right_panel = !app.show_right_panel;
-            app.focused_panel = if app.show_right_panel {
-                crate::app::FocusedPanel::RightPanel
+            if app.show_right_panel {
+                app.focused_panel = crate::app::FocusedPanel::RightPanel;
             } else {
-                crate::app::FocusedPanel::Editor
-            };
+                app.focused_panel = crate::app::FocusedPanel::Editor;
+                if app.mode == Mode::RightPanelInput {
+                    app.mode = Mode::Normal;
+                }
+            }
             true
         }
         // Ctrl+h/j/k/l でのパネル間移動（全パネル対応）

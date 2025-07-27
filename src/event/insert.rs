@@ -1,5 +1,4 @@
 use crate::app::App;
-use crate::app::Mode;
 use crossterm::event::KeyCode;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -141,10 +140,6 @@ pub fn handle_insert_mode_event(app: &mut App, key_code: KeyCode) {
             *current_window.cursor_y_mut() += 1;
             *current_window.cursor_x_mut() = indent.len();
             current_window.on_line_inserted(current_window.cursor_y());
-        }
-        KeyCode::Esc => {
-            current_window.end_insert_mode();
-            app.mode = Mode::Normal;
         }
         _ => {}
     }

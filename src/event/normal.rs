@@ -272,30 +272,12 @@ pub fn handle_normal_mode_event(app: &mut App, key_code: KeyCode, key_modifiers:
         } else {
             app.status_message = "Nothing to redo".to_string();
         }
-    } else if key_code == KeyCode::Char('b') && key_modifiers == KeyModifiers::CONTROL {
-        // Ctrl+B: Toggle directory and right panel visibility
-        app.status_message = format!("CTRL+B PRESSED: dir={}, right={}, focus={:?}", app.show_directory, app.show_right_panel, app.focused_panel);
-        if app.show_directory {
-            // ディレクトリパネルが表示中 → 右パネルに切り替え
-            app.show_directory = false;
-            app.show_right_panel = true;
-            app.focused_panel = FocusedPanel::RightPanel;
-            app.status_message = format!("RIGHT PANEL: dir={}, right={}, focus={:?}", app.show_directory, app.show_right_panel, app.focused_panel);
-        } else if app.show_right_panel {
-            // 右パネルが表示中 → 両方非表示
-            app.show_right_panel = false;
-            app.show_directory = false;
-            app.focused_panel = FocusedPanel::Editor;
-            app.status_message = format!("HIDDEN: dir={}, right={}, focus={:?}", app.show_directory, app.show_right_panel, app.focused_panel);
-        } else {
-            // 両方非表示 → ディレクトリパネルを表示
-            app.show_directory = true;
-            app.show_right_panel = false;
-            app.focused_panel = FocusedPanel::Directory;
-            // フォーカス設定を確実にするため、明示的に再設定
-            app.status_message = format!("DIR PANEL FIXED: dir={}, right={}, focus={:?}", app.show_directory, app.show_right_panel, app.focused_panel);
-        }
+    // F5キーでAI状態を変更（リアルタイムテスト用）
+    if key_code == KeyCode::F(5) {
+        app.ai_status = "LLM再接続中".to_string();
+        app.status_message = "AI状態を「LLM再接続中」に変更".to_string();
     }
+}
     // F5キーでAI状態を変更（リアルタイムテスト用）
     if key_code == KeyCode::F(5) {
         app.ai_status = "LLM再接続中".to_string();

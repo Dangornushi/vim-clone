@@ -132,10 +132,6 @@ pub fn handle_visual_mode_event(app: &mut App, key_code: KeyCode) {
             app.set_yanked_text(yanked_text);
             app.mode = new_mode;
         }
-        KeyCode::Esc => {
-            *current_window.visual_start_mut() = None; // visual_startを先にクリア
-            app.mode = Mode::Normal; // モード変更を後に
-        }
         _ => {}
     }
 }
