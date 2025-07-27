@@ -41,7 +41,11 @@
     "ctrl": {
       "f": "toggle_directory",
       "b": "toggle_right_panel",
-      "r": "redo"
+      "r": "redo",
+      "h": "focus_left_panel",
+      "j": "focus_down_panel",
+      "k": "focus_up_panel",
+      "l": "focus_right_panel"
     }
   }
 }

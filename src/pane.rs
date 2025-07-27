@@ -270,6 +270,113 @@ impl PaneManager {
         }
     }
 
+    /// 最も左側のペインを取得
+    pub fn get_leftmost_pane_id(&self) -> Option<usize> {
+        let leaf_panes = self.get_leaf_panes();
+        if leaf_panes.is_empty() {
+            return None;
+        }
+
+        // 全てのリーフペインの中で最も左側（x座標が最小）のものを見つける
+        leaf_panes.iter()
+            .filter_map(|pane| pane.rect.map(|rect| (pane.id, rect.x)))
+            .min_by_key(|(_, x)| *x)
+            .map(|(id, _)| id)
+    }
+
+    /// 最も右側のペインを取得
+    pub fn get_rightmost_pane_id(&self) -> Option<usize> {
+        let leaf_panes = self.get_leaf_panes();
+        if leaf_panes.is_empty() {
+            return None;
+        }
+
+        // 全てのリーフペインの中で最も右側（x座標が最大）のものを見つける
+        leaf_panes.iter()
+            .filter_map(|pane| pane.rect.map(|rect| (pane.id, rect.x + rect.width)))
+            .max_by_key(|(_, right_edge)| *right_edge)
+            .map(|(id, _)| id)
+    }
+
+    /// 指定されたペインIDにフォーカスを移動
+    pub fn focus_pane(&mut self, pane_id: usize) {
+        if self.panes.contains_key(&pane_id) {
+            self.active_pane = pane_id;
+        }
+    }
+
+    /// 全てのペインを左から右の順序で取得（エディターペインのみ）
+    pub fn get_all_panes_left_to_right(&self) -> Vec<usize> {
+        let mut leaf_panes: Vec<_> = self.get_leaf_panes()
+            .iter()
+            .filter_map(|pane| pane.rect.map(|rect| (pane.id, rect.x)))
+            .collect();
+        
+        // x座標でソート（左から右へ）
+        leaf_panes.sort_by_key(|(_, x)| *x);
+        leaf_panes.into_iter().map(|(id, _)| id).collect()
+    }
+
+    /// 現在のペインから左隣のペインに移動
+    pub fn get_next_left_pane_id(&self) -> Option<usize> {
+        let all_panes = self.get_all_panes_left_to_right();
+        let current_pos = all_panes.iter().position(|&id| id == self.active_pane)?;
+        
+        if current_pos > 0 {
+            Some(all_panes[current_pos - 1])
+        } else {
+            None // 既に最左端
+        }
+    }
+
+    /// 現在のペインから右隣のペインに移動
+    pub fn get_next_right_pane_id(&self) -> Option<usize> {
+        let all_panes = self.get_all_panes_left_to_right();
+        let current_pos = all_panes.iter().position(|&id| id == self.active_pane)?;
+        
+        if current_pos < all_panes.len() - 1 {
+            Some(all_panes[current_pos + 1])
+        } else {
+            None // 既に最右端
+        }
+    }
+
+    /// 全てのペインを上から下の順序で取得（エディターペインのみ）
+    pub fn get_all_panes_top_to_bottom(&self) -> Vec<usize> {
+        let mut leaf_panes: Vec<_> = self.get_leaf_panes()
+            .iter()
+            .filter_map(|pane| pane.rect.map(|rect| (pane.id, rect.y)))
+            .collect();
+        
+        // y座標でソート（上から下へ）
+        leaf_panes.sort_by_key(|(_, y)| *y);
+        leaf_panes.into_iter().map(|(id, _)| id).collect()
+    }
+
+    /// 現在のペインから上隣のペインに移動
+    pub fn get_next_up_pane_id(&self) -> Option<usize> {
+        let all_panes = self.get_all_panes_top_to_bottom();
+        let current_pos = all_panes.iter().position(|&id| id == self.active_pane)?;
+        
+        if current_pos > 0 {
+            Some(all_panes[current_pos - 1])
+        } else {
+            None // 既に最上端
+        }
+    }
+
+    /// 現在のペインから下隣のペインに移動
+    pub fn get_next_down_pane_id(&self) -> Option<usize> {
+        let all_panes = self.get_all_panes_top_to_bottom();
+        let current_pos = all_panes.iter().position(|&id| id == self.active_pane)?;
+        
+        if current_pos < all_panes.len() - 1 {
+            Some(all_panes[current_pos + 1])
+        } else {
+            None // 既に最下端
+        }
+    }
+
     /// ペインナビゲーション: 上のペインに移動
     pub fn move_to_up_pane(&mut self) {
         if let Some(target_id) = self.find_adjacent_pane(SplitDirection::Vertical, false) {

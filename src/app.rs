@@ -8,6 +8,7 @@ use std::{
     path::PathBuf,
 };
 use arboard::Clipboard;
+use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     pane::PaneManager,
     config::Config,
@@ -272,6 +273,157 @@ impl App {
 
     pub fn activate_right_pane(&mut self) {
         self.pane_manager.move_to_right_pane();
+    }
+
+    pub fn focus_leftmost_pane(&mut self) {
+        if let Some(leftmost_id) = self.pane_manager.get_leftmost_pane_id() {
+            self.pane_manager.focus_pane(leftmost_id);
+        }
+    }
+
+    pub fn focus_rightmost_pane(&mut self) {
+        if let Some(rightmost_id) = self.pane_manager.get_rightmost_pane_id() {
+            self.pane_manager.focus_pane(rightmost_id);
+        }
+    }
+
+    /// 順次左移動（全パネル対応）
+    pub fn move_to_next_left_panel(&mut self) {
+        match self.focused_panel {
+            FocusedPanel::Directory => {
+                // ディレクトリパネルから左：何もしない（既に最左端）
+                self.status_message = "Already at leftmost panel".to_string();
+            }
+            FocusedPanel::Editor => {
+                // エディター内で左隣のペインに移動、なければディレクトリパネルへ
+                if let Some(left_pane_id) = self.pane_manager.get_next_left_pane_id() {
+                    self.pane_manager.focus_pane(left_pane_id);
+                    self.status_message = "Moved to left editor pane".to_string();
+                } else if self.show_directory {
+                    self.focused_panel = FocusedPanel::Directory;
+                    self.mode = Mode::Normal;
+                    self.status_message = "Moved to directory panel".to_string();
+                } else {
+                    self.status_message = "Already at leftmost editor pane".to_string();
+                }
+            }
+            FocusedPanel::RightPanel => {
+                // チャットパネルから左：最も右側のエディターペインへ
+                self.focused_panel = FocusedPanel::Editor;
+                self.mode = Mode::Normal;
+                self.focus_rightmost_pane();
+                self.status_message = "Moved to rightmost editor pane".to_string();
+            }
+        }
+    }
+
+    /// 順次右移動（全パネル対応）
+    pub fn move_to_next_right_panel(&mut self) {
+        match self.focused_panel {
+            FocusedPanel::Directory => {
+                // ディレクトリパネルから右：最も左側のエディターペインへ
+                self.focused_panel = FocusedPanel::Editor;
+                self.mode = Mode::Normal;
+                self.focus_leftmost_pane();
+                self.status_message = "Moved to leftmost editor pane".to_string();
+            }
+            FocusedPanel::Editor => {
+                // エディター内で右隣のペインに移動、なければチャットパネルへ
+                if let Some(right_pane_id) = self.pane_manager.get_next_right_pane_id() {
+                    self.pane_manager.focus_pane(right_pane_id);
+                    self.status_message = "Moved to right editor pane".to_string();
+                } else if self.show_right_panel {
+                    self.focused_panel = FocusedPanel::RightPanel;
+                    self.mode = Mode::RightPanelInput;
+                    self.status_message = "Moved to chat panel".to_string();
+                } else {
+                    self.status_message = "Already at rightmost editor pane".to_string();
+                }
+            }
+            FocusedPanel::RightPanel => {
+                // チャットパネルから右：何もしない（既に最右端）
+                self.status_message = "Already at rightmost panel".to_string();
+            }
+        }
+    }
+
+    /// 順次上移動（全パネル対応）
+    pub fn move_to_next_up_panel(&mut self) {
+        match self.focused_panel {
+            FocusedPanel::Directory => {
+                // ディレクトリパネル内でのスクロール上移動
+                let visible_height = 20; // 適切な値を設定
+                self.move_directory_selection_up(visible_height);
+                self.status_message = "Directory selection up".to_string();
+            }
+            FocusedPanel::Editor => {
+                // エディター内で上隣のペインに移動、なければ現在のペイン内でカーソル移動
+                if let Some(up_pane_id) = self.pane_manager.get_next_up_pane_id() {
+                    self.pane_manager.focus_pane(up_pane_id);
+                    self.status_message = "Moved to upper editor pane".to_string();
+                } else {
+                    // 上のペインがない場合は、現在のペイン内でカーソル上移動
+                    let current_window = self.current_window_mut();
+                    let cy = *current_window.cursor_y_mut();
+                    if cy > 0 {
+                        *current_window.cursor_y_mut() -= 1;
+                        let cy2 = *current_window.cursor_y_mut();
+                        let current_line_len_graphemes = current_window.buffer()[cy2].graphemes(true).count();
+                        let cx = *current_window.cursor_x_mut();
+                        *current_window.cursor_x_mut() = cx.min(current_line_len_graphemes);
+                        self.status_message = "Cursor moved up".to_string();
+                    } else {
+                        self.status_message = "Already at top of editor".to_string();
+                    }
+                }
+            }
+            FocusedPanel::RightPanel => {
+                // チャットパネル内でのスクロール上移動
+                let visible_height = 20; // 適切な値を設定
+                self.move_right_panel_selection_up(visible_height);
+                self.status_message = "Chat selection up".to_string();
+            }
+        }
+    }
+
+    /// 順次下移動（全パネル対応）
+    pub fn move_to_next_down_panel(&mut self) {
+        match self.focused_panel {
+            FocusedPanel::Directory => {
+                // ディレクトリパネル内でのスクロール下移動
+                let visible_height = 20; // 適切な値を設定
+                self.move_directory_selection_down(visible_height);
+                self.status_message = "Directory selection down".to_string();
+            }
+            FocusedPanel::Editor => {
+                // エディター内で下隣のペインに移動、なければ現在のペイン内でカーソル移動
+                if let Some(down_pane_id) = self.pane_manager.get_next_down_pane_id() {
+                    self.pane_manager.focus_pane(down_pane_id);
+                    self.status_message = "Moved to lower editor pane".to_string();
+                } else {
+                    // 下のペインがない場合は、現在のペイン内でカーソル下移動
+                    let current_window = self.current_window_mut();
+                    let len = current_window.buffer().len();
+                    let cy = *current_window.cursor_y_mut();
+                    if len > 0 && cy < len - 1 {
+                        *current_window.cursor_y_mut() += 1;
+                        let cy2 = *current_window.cursor_y_mut();
+                        let current_line_len_graphemes = current_window.buffer()[cy2].graphemes(true).count();
+                        let cx = *current_window.cursor_x_mut();
+                        *current_window.cursor_x_mut() = cx.min(current_line_len_graphemes);
+                        self.status_message = "Cursor moved down".to_string();
+                    } else {
+                        self.status_message = "Already at bottom of editor".to_string();
+                    }
+                }
+            }
+            FocusedPanel::RightPanel => {
+                // チャットパネル内でのスクロール下移動
+                let visible_height = 20; // 適切な値を設定
+                self.move_right_panel_selection_down(visible_height);
+                self.status_message = "Chat selection down".to_string();
+            }
+        }
     }
 
     pub fn open_file(&mut self, filename: &str) {

@@ -29,6 +29,7 @@ pub fn handle_right_panel_input_mode_event_bg(app: &mut App, key_code: KeyCode) 
                     });
                 }
                 app.right_panel_input.clear();
+                app.right_panel_input_cursor = 0;
             }
             app.mode = Mode::RightPanelInput;
         }
@@ -37,14 +38,59 @@ pub fn handle_right_panel_input_mode_event_bg(app: &mut App, key_code: KeyCode) 
             app.focused_panel = crate::app::FocusedPanel::Editor;
         }
         KeyCode::Backspace => {
-            app.right_panel_input.pop();
+            if app.right_panel_input_cursor > 0 {
+                use unicode_segmentation::UnicodeSegmentation;
+                let graphemes: Vec<&str> = app.right_panel_input.graphemes(true).collect();
+                if app.right_panel_input_cursor <= graphemes.len() {
+                    // カーソル位置の前の文字を削除
+                    let byte_index = app.right_panel_input
+                        .grapheme_indices(true)
+                        .nth(app.right_panel_input_cursor - 1)
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+                    let next_byte_index = app.right_panel_input
+                        .grapheme_indices(true)
+                        .nth(app.right_panel_input_cursor)
+                        .map(|(i, _)| i)
+                        .unwrap_or(app.right_panel_input.len());
+                    app.right_panel_input.drain(byte_index..next_byte_index);
+                    app.right_panel_input_cursor -= 1;
+                }
+            }
+        }
+        KeyCode::Left => {
+            if app.right_panel_input_cursor > 0 {
+                app.right_panel_input_cursor -= 1;
+            }
+        }
+        KeyCode::Right => {
+            use unicode_segmentation::UnicodeSegmentation;
+            let grapheme_count = app.right_panel_input.graphemes(true).count();
+            if app.right_panel_input_cursor < grapheme_count {
+                app.right_panel_input_cursor += 1;
+            }
+        }
+        KeyCode::Home => {
+            app.right_panel_input_cursor = 0;
+        }
+        KeyCode::End => {
+            use unicode_segmentation::UnicodeSegmentation;
+            app.right_panel_input_cursor = app.right_panel_input.graphemes(true).count();
         }
         KeyCode::Char('b') => {
             // Ctrl + b でEditorにフォーカスを戻す
             app.focused_panel = crate::app::FocusedPanel::Editor;
         }
         KeyCode::Char(c) => {
-            app.right_panel_input.push(c);
+            use unicode_segmentation::UnicodeSegmentation;
+            // カーソル位置に文字を挿入
+            let byte_index = app.right_panel_input
+                .grapheme_indices(true)
+                .nth(app.right_panel_input_cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(app.right_panel_input.len());
+            app.right_panel_input.insert(byte_index, c);
+            app.right_panel_input_cursor += 1;
         }
         _ => {}
     }

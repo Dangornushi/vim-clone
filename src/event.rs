@@ -100,7 +100,45 @@ fn handle_panel_toggle(app: &mut App, key_code: KeyCode, key_modifiers: KeyModif
             };
             true
         }
+        // Ctrl+h/j/k/l でのパネル間移動（全パネル対応）
+        (KeyModifiers::CONTROL, KeyCode::Char('h')) => {
+            handle_panel_focus(app, "focus_left_panel");
+            true
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('j')) => {
+            handle_panel_focus(app, "focus_down_panel");
+            true
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('k')) => {
+            handle_panel_focus(app, "focus_up_panel");
+            true
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('l')) => {
+            handle_panel_focus(app, "focus_right_panel");
+            true
+        }
         _ => false,
+    }
+}
+
+/// パネルフォーカス処理
+fn handle_panel_focus(app: &mut App, action: &str) {
+    use crate::app::FocusedPanel;
+    
+    match action {
+        "focus_left_panel" => {
+            app.move_to_next_left_panel();
+        }
+        "focus_right_panel" => {
+            app.move_to_next_right_panel();
+        }
+        "focus_up_panel" => {
+            app.move_to_next_up_panel();
+        }
+        "focus_down_panel" => {
+            app.move_to_next_down_panel();
+        }
+        _ => {}
     }
 }
 
