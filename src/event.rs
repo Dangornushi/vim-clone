@@ -4,8 +4,7 @@ mod normal;
 mod visual;
 mod right_panel_input;
 
-use crate::App;
-use crate::app::Mode;
+use crate::app::{App, Mode};
 use crossterm::{
     cursor::SetCursorStyle,
     event::{self, Event, KeyEventKind, KeyCode, KeyModifiers},
@@ -15,7 +14,10 @@ use ratatui::backend::Backend;
 use ratatui::Terminal;
 use std::io;
 
-pub async fn run_app<B: Backend + std::io::Write>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
+pub async fn run_app<B: Backend + std::io::Write>(
+    terminal: &mut Terminal<B>,
+    mut app: App,
+) -> io::Result<()> {
     loop {
         // AIレスポンス受信ポーリング
         if let Some(receiver) = app.ai_response_receiver.as_mut() {
@@ -77,15 +79,14 @@ pub async fn run_app<B: Backend + std::io::Write>(terminal: &mut Terminal<B>, mu
 
 /// パネルの表示/非表示を切り替える統一処理
 fn handle_panel_toggle(app: &mut App, key_code: KeyCode, key_modifiers: KeyModifiers) -> bool {
-    use crate::app::FocusedPanel;
     
     match (key_modifiers, key_code) {
         (KeyModifiers::CONTROL, KeyCode::Char('f')) => {
             app.show_directory = !app.show_directory;
             app.focused_panel = if app.show_directory {
-                FocusedPanel::Directory
+                crate::app::FocusedPanel::Directory
             } else {
-                FocusedPanel::Editor
+                crate::app::FocusedPanel::Editor
             };
             app.status_message = format!("Directory panel {}", 
                 if app.show_directory { "opened" } else { "closed" });
@@ -94,9 +95,9 @@ fn handle_panel_toggle(app: &mut App, key_code: KeyCode, key_modifiers: KeyModif
         (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
             app.show_right_panel = !app.show_right_panel;
             app.focused_panel = if app.show_right_panel {
-                FocusedPanel::RightPanel
+                crate::app::FocusedPanel::RightPanel
             } else {
-                FocusedPanel::Editor
+                crate::app::FocusedPanel::Editor
             };
             true
         }
@@ -123,7 +124,6 @@ fn handle_panel_toggle(app: &mut App, key_code: KeyCode, key_modifiers: KeyModif
 
 /// パネルフォーカス処理
 fn handle_panel_focus(app: &mut App, action: &str) {
-    use crate::app::FocusedPanel;
     
     match action {
         "focus_left_panel" => {
@@ -148,16 +148,15 @@ fn handle_focus_cycling(app: &mut App, key_code: KeyCode) -> bool {
         return false;
     }
     
-    use crate::app::FocusedPanel;
     
     app.focused_panel = match (app.show_directory, app.show_right_panel, &app.focused_panel) {
-        (true, true, FocusedPanel::Directory) => FocusedPanel::RightPanel,
-        (true, true, FocusedPanel::RightPanel) => FocusedPanel::Editor,
-        (true, true, FocusedPanel::Editor) => FocusedPanel::Directory,
-        (true, false, FocusedPanel::Directory) => FocusedPanel::Editor,
-        (true, false, _) => FocusedPanel::Directory,
-        (false, true, FocusedPanel::RightPanel) => FocusedPanel::Editor,
-        (false, true, _) => FocusedPanel::RightPanel,
+        (true, true, crate::app::FocusedPanel::Directory) => crate::app::FocusedPanel::RightPanel,
+        (true, true, crate::app::FocusedPanel::RightPanel) => crate::app::FocusedPanel::Editor,
+        (true, true, crate::app::FocusedPanel::Editor) => crate::app::FocusedPanel::Directory,
+        (true, false, crate::app::FocusedPanel::Directory) => crate::app::FocusedPanel::Editor,
+        (true, false, _) => crate::app::FocusedPanel::Directory,
+        (false, true, crate::app::FocusedPanel::RightPanel) => crate::app::FocusedPanel::Editor,
+        (false, true, _) => crate::app::FocusedPanel::RightPanel,
         _ => app.focused_panel.clone(),
     };
     

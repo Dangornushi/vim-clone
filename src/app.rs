@@ -1,22 +1,9 @@
-use tokio::sync::mpsc::{Sender, Receiver};
-
-// 既存のApp構造体定義の末尾にai_response_sender/receiverのみ追加
-// 他のApp定義はそのまま残すこと
-use std::{
-    env,
-    fs,
-    path::PathBuf,
-};
+use crate::{app_config::{AppConfigManager, ConfigManager}, config::Config, pane::PaneManager, utils, window::Window,};
 use arboard::Clipboard;
+use std::{env, path::PathBuf};
+use tokio::sync::mpsc::{Receiver, Sender};
 use unicode_segmentation::UnicodeSegmentation;
-use crate::{
-    pane::PaneManager,
-    config::Config,
-    window::Window,
-    app_config::{ConfigManager, AppConfigManager},
-};
 
-// Re-export for other modules
 pub use crate::window::Mode;
 
 pub struct App {
@@ -41,10 +28,9 @@ pub struct App {
     pub selected_right_panel_index: usize,
     pub right_panel_scroll_offset: usize,
     pub focused_panel: FocusedPanel,
-    // mpscチャネル追加
     pub ai_response_sender: Option<Sender<String>>,
     pub ai_response_receiver: Option<Receiver<String>>,
-    pub ai_status: String, // AI状態表示用
+    pub ai_status: String,
     pub right_panel_input_cursor: usize,
 }
 
@@ -93,15 +79,13 @@ impl App {
             focused_panel: FocusedPanel::Directory,
             ai_response_sender: Some(tx),
             ai_response_receiver: Some(rx),
-            ai_status: "LLM接続失敗".to_string(), // テスト用状態
+            ai_status: "LLM接続失敗".to_string(),
             right_panel_input_cursor: 0,
         };
-        app.right_panel_input_cursor = 0;
         app.update_directory_files();
         app
     }
 
-    // 設定管理を簡素化
     pub fn reload_config(&mut self) -> Result<(), String> {
         self.config = AppConfigManager::load_config();
         Ok(())
@@ -118,50 +102,39 @@ impl App {
 
     pub fn set_config_value(&mut self, key: &str, value: &str) {
         let result = match key {
-            "indent_width" => value.parse::<usize>()
-                .map(|w| { self.config.editor.indent_width = w; format!("Set indent_width to {}", w) })
+            "indent_width" => value
+                .parse::<usize>()
+                .map(|w| {
+                    self.config.editor.indent_width = w;
+                    format!("Set indent_width to {}", w)
+                })
                 .map_err(|_| "Invalid value for indent_width".to_string()),
-            "tab_size" => value.parse::<usize>()
-                .map(|s| { self.config.editor.tab_size = s; format!("Set tab_size to {}", s) })
+            "tab_size" => value
+                .parse::<usize>()
+                .map(|s| {
+                    self.config.editor.tab_size = s;
+                    format!("Set tab_size to {}", s)
+                })
                 .map_err(|_| "Invalid value for tab_size".to_string()),
-            "show_line_numbers" => value.parse::<bool>()
-                .map(|b| { self.config.editor.show_line_numbers = b; format!("Set show_line_numbers to {}", b) })
+            "show_line_numbers" => value
+                .parse::<bool>()
+                .map(|b| {
+                    self.config.editor.show_line_numbers = b;
+                    format!("Set show_line_numbers to {}", b)
+                })
                 .map_err(|_| "Invalid value for show_line_numbers (use true/false)".to_string()),
             _ => Err(format!("Unknown config key: {}", key)),
         };
-        
+
         self.status_message = result.unwrap_or_else(|e| e);
     }
 
     fn update_directory_files(&mut self) {
-        self.directory_files.clear();
-        if self.current_path.parent().is_some() {
-            self.directory_files.push("../".to_string());
-        }
-        if let Ok(entries) = fs::read_dir(&self.current_path) {
-            let mut files = vec![];
-            let mut dirs = vec![];
-
-            for entry in entries.flatten() {
-                let file_name = entry.file_name().to_string_lossy().to_string();
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_dir() {
-                        dirs.push(format!("{}/", file_name));
-                    } else {
-                        files.push(file_name);
-                    }
-                }
-            }
-            dirs.sort();
-            files.sort();
-            self.directory_files.extend(dirs);
-            self.directory_files.extend(files);
-        }
+        self.directory_files = utils::list_directory(&self.current_path).unwrap_or_default();
         self.selected_directory_index = 0;
         self.directory_scroll_offset = 0;
     }
 
-    // ファイル操作メソッドを統合
     pub fn open_selected_item(&mut self) {
         if let Some(selected_item) = self.directory_files.get(self.selected_directory_index).cloned() {
             self.handle_directory_item(selected_item, None);
@@ -180,7 +153,6 @@ impl App {
         }
     }
 
-    // 統合されたディレクトリアイテム処理
     fn handle_directory_item(&mut self, selected_item: String, split_type: Option<SplitType>) {
         let item_name = selected_item.trim_end_matches('/');
 
@@ -200,7 +172,7 @@ impl App {
         } else if new_path.is_file() {
             let file_path_str = new_path.to_str().unwrap().to_string();
             let window_index = self.get_or_create_window(file_path_str);
-            
+
             match split_type {
                 Some(SplitType::Vertical) => {
                     let active_pane_id = self.pane_manager.get_active_pane_id();
@@ -221,13 +193,12 @@ impl App {
                     }
                 }
             }
-            
+
             self.show_directory = false;
             self.focused_panel = FocusedPanel::Editor;
         }
     }
 
-    // ウィンドウの取得または作成を統合
     fn get_or_create_window(&mut self, file_path_str: String) -> usize {
         if let Some(index) = self.windows.iter().position(|w| w.filename() == Some(&file_path_str)) {
             index
@@ -287,82 +258,54 @@ impl App {
         }
     }
 
-    /// 順次左移動（全パネル対応）
     pub fn move_to_next_left_panel(&mut self) {
         match self.focused_panel {
-            FocusedPanel::Directory => {
-                // ディレクトリパネルから左：何もしない（既に最左端）
-                self.status_message = "Already at leftmost panel".to_string();
-            }
+            FocusedPanel::Directory => {}
             FocusedPanel::Editor => {
-                // エディター内で左隣のペインに移動、なければディレクトリパネルへ
                 if let Some(left_pane_id) = self.pane_manager.get_next_left_pane_id() {
                     self.pane_manager.focus_pane(left_pane_id);
-                    self.status_message = "Moved to left editor pane".to_string();
                 } else if self.show_directory {
                     self.focused_panel = FocusedPanel::Directory;
                     self.mode = Mode::Normal;
-                    self.status_message = "Moved to directory panel".to_string();
-                } else {
-                    self.status_message = "Already at leftmost editor pane".to_string();
                 }
             }
             FocusedPanel::RightPanel => {
-                // チャットパネルから左：最も右側のエディターペインへ
                 self.focused_panel = FocusedPanel::Editor;
                 self.mode = Mode::Normal;
                 self.focus_rightmost_pane();
-                self.status_message = "Moved to rightmost editor pane".to_string();
             }
         }
     }
 
-    /// 順次右移動（全パネル対応）
     pub fn move_to_next_right_panel(&mut self) {
         match self.focused_panel {
             FocusedPanel::Directory => {
-                // ディレクトリパネルから右：最も左側のエディターペインへ
                 self.focused_panel = FocusedPanel::Editor;
                 self.mode = Mode::Normal;
                 self.focus_leftmost_pane();
-                self.status_message = "Moved to leftmost editor pane".to_string();
             }
             FocusedPanel::Editor => {
-                // エディター内で右隣のペインに移動、なければチャットパネルへ
                 if let Some(right_pane_id) = self.pane_manager.get_next_right_pane_id() {
                     self.pane_manager.focus_pane(right_pane_id);
-                    self.status_message = "Moved to right editor pane".to_string();
                 } else if self.show_right_panel {
                     self.focused_panel = FocusedPanel::RightPanel;
                     self.mode = Mode::RightPanelInput;
-                    self.status_message = "Moved to chat panel".to_string();
-                } else {
-                    self.status_message = "Already at rightmost editor pane".to_string();
                 }
             }
-            FocusedPanel::RightPanel => {
-                // チャットパネルから右：何もしない（既に最右端）
-                self.status_message = "Already at rightmost panel".to_string();
-            }
+            FocusedPanel::RightPanel => {}
         }
     }
 
-    /// 順次上移動（全パネル対応）
     pub fn move_to_next_up_panel(&mut self) {
         match self.focused_panel {
             FocusedPanel::Directory => {
-                // ディレクトリパネル内でのスクロール上移動
-                let visible_height = 20; // 適切な値を設定
+                let visible_height = 20;
                 self.move_directory_selection_up(visible_height);
-                self.status_message = "Directory selection up".to_string();
             }
             FocusedPanel::Editor => {
-                // エディター内で上隣のペインに移動、なければ現在のペイン内でカーソル移動
                 if let Some(up_pane_id) = self.pane_manager.get_next_up_pane_id() {
                     self.pane_manager.focus_pane(up_pane_id);
-                    self.status_message = "Moved to upper editor pane".to_string();
                 } else {
-                    // 上のペインがない場合は、現在のペイン内でカーソル上移動
                     let current_window = self.current_window_mut();
                     let cy = *current_window.cursor_y_mut();
                     if cy > 0 {
@@ -371,37 +314,26 @@ impl App {
                         let current_line_len_graphemes = current_window.buffer()[cy2].graphemes(true).count();
                         let cx = *current_window.cursor_x_mut();
                         *current_window.cursor_x_mut() = cx.min(current_line_len_graphemes);
-                        self.status_message = "Cursor moved up".to_string();
-                    } else {
-                        self.status_message = "Already at top of editor".to_string();
                     }
                 }
             }
             FocusedPanel::RightPanel => {
-                // チャットパネル内でのスクロール上移動
-                let visible_height = 20; // 適切な値を設定
+                let visible_height = 20;
                 self.move_right_panel_selection_up(visible_height);
-                self.status_message = "Chat selection up".to_string();
             }
         }
     }
 
-    /// 順次下移動（全パネル対応）
     pub fn move_to_next_down_panel(&mut self) {
         match self.focused_panel {
             FocusedPanel::Directory => {
-                // ディレクトリパネル内でのスクロール下移動
-                let visible_height = 20; // 適切な値を設定
+                let visible_height = 20;
                 self.move_directory_selection_down(visible_height);
-                self.status_message = "Directory selection down".to_string();
             }
             FocusedPanel::Editor => {
-                // エディター内で下隣のペインに移動、なければ現在のペイン内でカーソル移動
                 if let Some(down_pane_id) = self.pane_manager.get_next_down_pane_id() {
                     self.pane_manager.focus_pane(down_pane_id);
-                    self.status_message = "Moved to lower editor pane".to_string();
                 } else {
-                    // 下のペインがない場合は、現在のペイン内でカーソル下移動
                     let current_window = self.current_window_mut();
                     let len = current_window.buffer().len();
                     let cy = *current_window.cursor_y_mut();
@@ -411,17 +343,12 @@ impl App {
                         let current_line_len_graphemes = current_window.buffer()[cy2].graphemes(true).count();
                         let cx = *current_window.cursor_x_mut();
                         *current_window.cursor_x_mut() = cx.min(current_line_len_graphemes);
-                        self.status_message = "Cursor moved down".to_string();
-                    } else {
-                        self.status_message = "Already at bottom of editor".to_string();
                     }
                 }
             }
             FocusedPanel::RightPanel => {
-                // チャットパネル内でのスクロール下移動
-                let visible_height = 20; // 適切な値を設定
+                let visible_height = 20;
                 self.move_right_panel_selection_down(visible_height);
-                self.status_message = "Chat selection down".to_string();
             }
         }
     }
@@ -435,19 +362,18 @@ impl App {
 
         let file_path_str = file_path.to_string_lossy().to_string();
         let window_index = self.get_or_create_window(file_path_str.clone());
-        
+
         let active_pane_id = self.pane_manager.get_active_pane_id();
         if let Some(pane) = self.pane_manager.get_pane_mut(active_pane_id) {
             pane.window_index = window_index;
         }
-        
+
         self.status_message = if file_path.exists() {
             format!("\"{}\" opened", filename)
         } else {
             format!("\"{}\" [New File]", filename)
         };
     }
-
 
     pub fn apply_completion(&mut self) {
         if self.show_completion && !self.completions.is_empty() {
@@ -478,7 +404,6 @@ impl App {
         (start, end)
     }
 
-    // スクロール処理を統合
     pub fn move_directory_selection_up(&mut self, visible_height: usize) {
         if self.selected_directory_index > 0 {
             self.selected_directory_index -= 1;
@@ -519,14 +444,17 @@ impl App {
         Self::update_scroll(&mut self.right_panel_scroll_offset, selected_index, total_items, visible_height);
     }
 
-    // 共通のスクロール更新ロジック
-    fn update_scroll(scroll_offset: &mut usize, selected_index: usize, 
-                     total_items: usize, visible_height: usize) {
+    fn update_scroll(
+        scroll_offset: &mut usize,
+        selected_index: usize,
+        total_items: usize,
+        visible_height: usize,
+    ) {
         if total_items <= visible_height {
             *scroll_offset = 0;
             return;
         }
-        
+
         if selected_index < *scroll_offset {
             *scroll_offset = selected_index;
         } else if selected_index >= *scroll_offset + visible_height {

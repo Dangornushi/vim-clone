@@ -1,43 +1,33 @@
-pub mod editor;
-pub mod completion;
-pub mod panels;
-
-use crate::app::App;
+use crate::app::{App, FocusedPanel};
 use crate::utils::get_display_cursor_x;
 use crate::window::Mode;
-use crate::constants::editor as editor_constants;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::Style,
     widgets::Paragraph,
     Frame,
 };
-use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
+
+pub mod completion;
+pub mod editor;
+pub mod panels;
 
 pub use editor::draw_editor_pane;
 pub use completion::draw_completion_popup;
 pub use panels::{draw_directory_panel, draw_chat_panel, ChatPanelData};
 
 pub fn ui(f: &mut Frame, app: &mut App) {
-    let app_mode = app.mode;
-    let app_status_message = app.status_message.clone();
-    let app_command_buffer = app.command_buffer.clone();
-
     let is_floating = app.config.ui.directory_pane_floating;
 
     let main_chunks = if (app.show_directory || app.show_right_panel) && !is_floating {
         let mut constraints = vec![];
         
-        // 左側ディレクトリパネル
         if app.show_directory {
             constraints.push(Constraint::Length(app.config.ui.directory_pane_width));
         }
         
-        // 中央のエディタ部分
         constraints.push(Constraint::Min(0));
         
-        // 右側パネル
         if app.show_right_panel && !is_floating {
             constraints.push(Constraint::Length(app.config.ui.directory_pane_width));
         }
@@ -56,10 +46,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let editor_chunk_index = if app.show_directory && !is_floating { 1 } else { 0 };
     let editor_area = main_chunks[editor_chunk_index];
 
-    // ペインマネージャーを使用してレイアウトを計算
     app.pane_manager.calculate_layout(editor_area);
 
-    // すべてのリーフペインの情報を取得
     let pane_info: Vec<(usize, usize, ratatui::layout::Rect, bool)> = {
         let leaf_panes = app.pane_manager.get_leaf_panes();
         let active_pane_id = app.pane_manager.get_active_pane_id();
@@ -73,7 +61,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             .collect()
     };
     
-    // ペインを描画
     for (_, window_index, rect, is_active) in pane_info {
         draw_editor_pane(f, app, rect, window_index, is_active);
     }
@@ -82,17 +69,14 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_directory_panel(f, app, &main_chunks, is_floating);
     }
 
-    // 右側パネルの描画
     if app.show_right_panel && !is_floating {
-        use crate::ui::panels::ChatPanelData;
         let mut chat_panel_data = ChatPanelData {
             items: app.right_panel_items.clone(),
             selected_index: app.selected_right_panel_index,
             scroll_offset: app.right_panel_scroll_offset,
             input: app.right_panel_input.clone(),
             focused: app.focused_panel == crate::app::FocusedPanel::RightPanel,
-            ai_status: app.ai_status.clone(), // AI状態をAppから取得
-            input_cursor: app.right_panel_input_cursor,
+            ai_status: app.ai_status.clone(),
         };
         draw_chat_panel(
             f,
@@ -102,20 +86,19 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         );
     }
 
-    // ステータスバーの描画
-    let status_bar_text = match app_mode {
+    let status_bar_text = match app.mode {
         Mode::Normal => {
             let w = app.current_window_mut();
             format!(
                 "NORMAL | {}:{} | {}",
                 w.cursor_y() + 1,
                 w.cursor_x() + 1,
-                app_status_message
+                app.status_message
             )
         },
         Mode::Insert => "INSERT".to_string(),
         Mode::Visual => "VISUAL".to_string(),
-        Mode::Command => format!(":{}", app_command_buffer),
+        Mode::Command => format!(":{}", app.command_buffer),
         Mode::RightPanelInput => "RIGHT PANEL INPUT".to_string(),
     };
     let status_bar_chunk = Layout::default()
@@ -125,7 +108,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let status_bar = Paragraph::new(status_bar_text).style(Style::default().bg(app.config.theme.ui.status_bar_background.clone().into()));
     f.render_widget(status_bar, status_bar_chunk);
 
-    // 予測変換ポップアップの描画
     if app.show_completion && !app.completions.is_empty() && !app.show_directory {
         if let Some(active_pane) = app.pane_manager.get_active_pane() {
             if let Some(rect) = active_pane.rect {
@@ -134,12 +116,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         }
     }
 
-    // カーソルの描画 - フォーカスされているパネルに表示
-    use crate::app::FocusedPanel;
     match app.focused_panel {
         FocusedPanel::RightPanel if app.show_right_panel && !is_floating => {
             if app.mode == Mode::RightPanelInput {
-                // 右側パネルの入力欄にカーソルを表示
                 let right_panel_index = if app.show_directory { 2 } else { 1 };
                 let right_panel_area = main_chunks[right_panel_index];
                 let right_panel_chunks = Layout::default()
@@ -160,13 +139,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         }
         FocusedPanel::Directory if app.show_directory => {
             if is_floating {
-                // フローティングディレクトリパネルにカーソルを表示
                 let area = panels::centered_rect(60, 80, f.size());
                 let inner_area = area.inner(&ratatui::layout::Margin { vertical: 1, horizontal: 1 });
                 let cursor_y = (app.selected_directory_index - app.directory_scroll_offset).min(inner_area.height.saturating_sub(1) as usize);
                 f.set_cursor(inner_area.x, inner_area.y + cursor_y as u16);
             } else {
-                // 非フローティングディレクトリパネルにカーソルを表示
                 let directory_area = main_chunks[0].inner(&ratatui::layout::Margin { vertical: 1, horizontal: 1 });
                 f.set_cursor(directory_area.x, directory_area.y + app.selected_directory_index as u16);
             }
@@ -176,30 +153,37 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 if let Some(rect) = active_pane.rect {
                     let show_line_numbers = app.config.editor.show_line_numbers;
                     let horizontal_margin = app.config.ui.editor_margins.horizontal;
-                    let current_window = app.current_window_mut();
-                    let cursor_width = if current_window.buffer().is_empty() || current_window.cursor_y() >= current_window.buffer().len() {
+                    let line_number_width = if show_line_numbers { app.config.editor.line_number_width } else { 0 };
+                    let separator_width = if show_line_numbers { 1 } else { 0 };
+                    let text_start_x_offset = horizontal_margin as usize + line_number_width + separator_width;
+                    
+                    let (cursor_x, cursor_y, scroll_x, scroll_y) = {
+                        let current_window = app.current_window();
+                        (current_window.cursor_x(), current_window.cursor_y(), current_window.scroll_x(), current_window.scroll_y())
+                    };
+
+                    let cursor_width = if app.current_window().buffer().is_empty() || cursor_y >= app.current_window().buffer().len() {
                         0
                     } else {
-                        current_window.buffer()[current_window.cursor_y()]
+                        use unicode_segmentation::UnicodeSegmentation;
+                        use unicode_width::UnicodeWidthStr;
+                        app.current_window().buffer()[cursor_y]
                             .graphemes(true)
-                            .take(current_window.cursor_x())
+                            .take(cursor_x)
                             .map(|g| g.width())
                             .sum::<usize>()
                     };
-                    let line_number_width = if show_line_numbers { editor_constants::DEFAULT_LINE_NUMBER_WIDTH } else { 0 };
-                    let separator_width = if show_line_numbers { editor_constants::LINE_NUMBER_SEPARATOR_WIDTH } else { 0 };
-                    let text_start_x_offset = horizontal_margin as usize + line_number_width + separator_width;
-                    // カーソルが表示範囲内にある場合のみ描画
-                    if current_window.cursor_y() >= current_window.scroll_y() &&
-                       current_window.cursor_y() < current_window.scroll_y() + rect.height.saturating_sub(2) as usize {
+
+                    if cursor_y >= scroll_y &&
+                       cursor_y < scroll_y + rect.height.saturating_sub(2) as usize {
                         f.set_cursor(
-                            rect.x + text_start_x_offset as u16 + (cursor_width - current_window.scroll_x()) as u16,
-                            rect.y + 1 + (current_window.cursor_y() - current_window.scroll_y()) as u16,
+                            rect.x + text_start_x_offset as u16 + (cursor_width - scroll_x) as u16,
+                            rect.y + 1 + (cursor_y - scroll_y) as u16,
                         )
                     }
                 }
             }
         }
-        _ => {} // その他の場合は何もしない
+        _ => {}
     }
 }

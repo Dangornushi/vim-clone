@@ -1,27 +1,9 @@
-mod utils;
-mod app;
-mod event;
-mod ui;
-mod pane;
-mod config;
-mod syntax;
-mod constants;
-mod window;
-mod app_config;
 use crate::app::App;
 use crossterm::{
-    event::{
-        DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
-        PushKeyboardEnhancementFlags,
-    },
-    
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, Clear,
-        ClearType,
-    },
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-
 use ratatui::{
     backend::CrosstermBackend,
     Terminal,
@@ -31,6 +13,17 @@ use std::{
     io,
 };
 use clap::Parser;
+
+mod app;
+mod event;
+mod ui;
+mod pane;
+mod config;
+mod syntax;
+mod constants;
+mod window;
+mod app_config;
+mod utils;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -53,17 +46,13 @@ enum Subcommands {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // setup terminal
     let args = Args::parse();
 
-    // If a subcommand is used, we don't need to enter raw mode or run the TUI
     let filename = if let Some(file) = args.file {
         Some(file)
     } else if let Some(Subcommands::New { name }) = args.command {
         println!("Creating new file: {}", name);
-        // ここでファイル作成ロジックを追加する
-        // 例: std::fs::File::create(&name)?;
-        return Ok(()); // 新規作成の場合はTUIを起動しない
+        return Ok(());
     } else if let Some(Subcommands::Version) = args.command {
         println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -74,22 +63,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        EnableMouseCapture,
-        PushKeyboardEnhancementFlags(
-            KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                | KeyboardEnhancementFlags::REPORT_EVENT_TYPES,
-        )
-    )?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Clear the screen
-    execute!(terminal.backend_mut(), Clear(ClearType::All))?;
-
-    // create app and run it
     let app = App::new(filename);
     let rt = tokio::runtime::Runtime::new()?;
     let res = rt.block_on(event::run_app(&mut terminal, app));
@@ -99,13 +76,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture,
-        PopKeyboardEnhancementFlags
+        DisableMouseCapture
     )?;
     terminal.show_cursor()?;
 
     if let Err(err) = res {
-        println!("{err:?}");
+        println!("{:?}", err);
     }
 
     Ok(())

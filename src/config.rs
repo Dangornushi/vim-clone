@@ -1,22 +1,7 @@
+
 use serde::{Serialize, Deserialize};
 use std::fs;
 
-#[derive(Deserialize)]
-pub struct AgentConfig {
-    pub name: String,
-    pub key: String,
-}
-
-#[derive(Deserialize)]
-pub struct AppConfig {
-    pub agent: AgentConfig,
-}
-
-pub fn load_agent_config(path: &str) -> Option<AgentConfig> {
-    let data = fs::read_to_string(path).ok()?;
-    let config: AppConfig = serde_json::from_str(&data).ok()?;
-    Some(config.agent)
-}
 use std::collections::HashMap;
 use ratatui::style::Color;
 use std::path::Path;

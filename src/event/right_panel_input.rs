@@ -1,14 +1,7 @@
-// 入力された文字列に「, Hello!」を付加して返す関数
-pub fn chat_greet(input: &str) -> String {
-    format!("{}, Hello!", input)
-}
-use crate::app::App;
-use crate::app::Mode;
+use crate::app::{App, Mode};
 use crossterm::event::KeyCode;
-use vim_editor::utils;
+use unicode_segmentation::UnicodeSegmentation;
 
-
-// Gemini APIリクエストをバックグラウンドで実行するための関数
 pub fn handle_right_panel_input_mode_event_bg(app: &mut App, key_code: KeyCode) {
     match key_code {
         KeyCode::Enter => {
@@ -21,7 +14,7 @@ pub fn handle_right_panel_input_mode_event_bg(app: &mut App, key_code: KeyCode) 
                     let sender = sender.clone();
                     tokio::spawn(async move {
                         // ユーザー入力内容をAPIに渡す
-                        let reply = match utils::send_gemini_greeting_with_input("config.json", &input).await {
+                        let reply = match crate::utils::send_gemini_greeting_with_input("config.json", &input).await {
                             Ok(r) => r,
                             Err(e) => format!("Gemini APIエラー: {}", e),
                         };
@@ -39,10 +32,8 @@ pub fn handle_right_panel_input_mode_event_bg(app: &mut App, key_code: KeyCode) 
         }
         KeyCode::Backspace => {
             if app.right_panel_input_cursor > 0 {
-                use unicode_segmentation::UnicodeSegmentation;
                 let graphemes: Vec<&str> = app.right_panel_input.graphemes(true).collect();
                 if app.right_panel_input_cursor <= graphemes.len() {
-                    // カーソル位置の前の文字を削除
                     let byte_index = app.right_panel_input
                         .grapheme_indices(true)
                         .nth(app.right_panel_input_cursor - 1)
@@ -64,7 +55,6 @@ pub fn handle_right_panel_input_mode_event_bg(app: &mut App, key_code: KeyCode) 
             }
         }
         KeyCode::Right => {
-            use unicode_segmentation::UnicodeSegmentation;
             let grapheme_count = app.right_panel_input.graphemes(true).count();
             if app.right_panel_input_cursor < grapheme_count {
                 app.right_panel_input_cursor += 1;
@@ -74,16 +64,9 @@ pub fn handle_right_panel_input_mode_event_bg(app: &mut App, key_code: KeyCode) 
             app.right_panel_input_cursor = 0;
         }
         KeyCode::End => {
-            use unicode_segmentation::UnicodeSegmentation;
             app.right_panel_input_cursor = app.right_panel_input.graphemes(true).count();
         }
-        KeyCode::Char('b') => {
-            // Ctrl + b でEditorにフォーカスを戻す
-            app.focused_panel = crate::app::FocusedPanel::Editor;
-        }
         KeyCode::Char(c) => {
-            use unicode_segmentation::UnicodeSegmentation;
-            // カーソル位置に文字を挿入
             let byte_index = app.right_panel_input
                 .grapheme_indices(true)
                 .nth(app.right_panel_input_cursor)
